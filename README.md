@@ -15,10 +15,11 @@ Dev environment bootstrap for Linux Mint. One script installs and configures eve
 
 ## What's included
 
-- **Kitty** terminal with Adventure Time theme, tiling layouts, and tuned performance
-- **Starship** prompt with Jujutsu (jj) change/bookmark display, git fallback, k8s context, and language version indicators
-- **JetBrainsMono Nerd Font** for ligatures and icons
-- **Jujutsu (jj)** version control
+- **[Kitty](https://sw.kovidgoyal.net/kitty/)** terminal with Adventure Time theme, tiling layouts, and tuned performance
+- **[Starship](https://starship.rs/)** prompt with [Jujutsu (jj)](https://jj-vcs.github.io/jj/) change/bookmark display, git fallback, k8s context, and language version indicators
+- **[Neovim](https://neovim.io/)** with [kitty-scrollback.nvim](https://github.com/mikesmithgh/kitty-scrollback.nvim) for easy copy/paste from terminal scrollback
+- **[JetBrainsMono Nerd Font](https://github.com/ryanoasis/nerd-fonts/tree/master/patched-fonts/JetBrainsMono)** for ligatures and icons
+- **[Jujutsu (jj)](https://jj-vcs.github.io/jj/)** version control
 - **Git** + **GitHub CLI** (gh)
 - **Go**, **Rust**, **Python 3**, **Node.js** (via nvm)
 - **Claude Code** with custom notification hooks (click-to-focus, auto-dismiss, sound) and per-project tab coloring
