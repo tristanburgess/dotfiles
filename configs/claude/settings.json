@@ -1,0 +1,53 @@
+{
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "permissions": {
+    "allow": [
+      "Read",
+      "Bash(gh api*)",
+      "Bash(gh pr*)",
+      "Bash(jj*)",
+      "Bash(go vet*)",
+      "Bash(go doc*)",
+      "Bash(go env*)",
+      "Bash(find*)",
+      "Bash(grep*)",
+      "Bash(sed*)"
+    ]
+  },
+  "model": "opus[1m]",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/session-color.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/notify.sh"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/notify.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

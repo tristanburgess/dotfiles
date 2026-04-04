@@ -1,0 +1,115 @@
+# ── Prompt Layout ────────────────────────────────────────────────
+# Define the order and content of the prompt
+format = """
+$directory\
+${custom.jj}\
+${custom.git}\
+$kubernetes\
+$cmd_duration\
+$line_break\
+${custom.jj_desc}\
+$golang\
+$nodejs\
+$python\
+$rust\
+$terraform\
+$character"""
+
+# Blank line between prompts for readability
+add_newline = true
+
+# Global command timeout — raised from 500ms default for jj in large repos
+command_timeout = 2000
+
+# ── Character (prompt symbol) ────────────────────────────────────
+# Green arrow on success, red on error
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol = "[❯](bold red)"
+
+# ── Directory ────────────────────────────────────────────────────
+# Truncate to 4 parent dirs, highlight repo root
+[directory]
+truncation_length = 4
+truncate_to_repo = false
+style = "bold cyan"
+repo_root_style = "bold cyan underline"
+repo_root_format = "[$before_root_path]($before_repo_root_style)[$repo_root]($repo_root_style)[$path]($style)[$read_only]($read_only_style) "
+
+# ── Jujutsu (custom modules) ────────────────────────────────────
+# Line 1: change ID and parent branch (next to path)
+[custom.jj]
+description = "Jujutsu change ID and parent branch"
+command = """jj log -r @ --no-graph -T 'separate(" ", change_id.shortest(), bookmarks.join(" ")) ++ if(parents.first().bookmarks(), " on " ++ parents.first().bookmarks().join(" ")) ++ if(!empty, " *")' 2>/dev/null"""
+detect_folders = [".jj"]
+ignore_timeout = true
+style = "bold purple"
+symbol = " "
+format = "[$symbol$output]($style) "
+
+# Line 2: change description (on its own line)
+[custom.jj_desc]
+description = "Jujutsu change description"
+command = """jj log -r @ --no-graph -T 'if(description, description.first_line().substr(0, 120), "(no description set, use `jj describe`)")' 2>/dev/null"""
+detect_folders = [".jj"]
+ignore_timeout = true
+style = "italic 248"
+format = "[$output]($style)\n"
+
+# ── Git (only in non-jj repos) ──────────────────────────────────
+[custom.git]
+description = "Git branch and status for non-jj repos"
+command = """branch=$(git branch --show-current 2>/dev/null || git rev-parse --short HEAD 2>/dev/null); dirty=$(git status --porcelain 2>/dev/null | head -1); printf '%s' "$branch"; [ -n "$dirty" ] && printf ' *'"""
+detect_folders = [".git"]
+when = "! test -d .jj"
+style = "bold purple"
+symbol = " "
+format = "[$symbol$output]($style) "
+
+# Disable built-in git modules (replaced by custom.git above)
+[git_branch]
+disabled = true
+
+[git_status]
+disabled = true
+
+# ── Kubernetes ───────────────────────────────────────────────────
+# Show current context and namespace
+[kubernetes]
+disabled = false
+symbol = "☸ "
+style = "bold blue"
+format = '[$symbol$context(/$namespace)]($style) '
+
+# ── Languages (only shown when relevant files are detected) ──────
+[golang]
+symbol = " "
+style = "bold cyan"
+format = "[Go $symbol$version]($style) "
+
+[nodejs]
+symbol = " "
+style = "bold green"
+format = "[Node $symbol$version]($style) "
+
+[python]
+symbol = " "
+style = "bold yellow"
+format = "[Python $symbol$version]($style) "
+
+[rust]
+symbol = " "
+style = "bold red"
+format = "[Rust $symbol$version]($style) "
+
+[terraform]
+symbol = "󱁢 "
+style = "bold 105"
+format = "[Terraform $symbol$version($workspace)]($style) "
+
+# ── Command Duration ─────────────────────────────────────────────
+# Show elapsed time for commands that take longer than 3 seconds
+[cmd_duration]
+min_time = 3000
+style = "bold yellow"
+format = "[took $duration]($style) "
