@@ -1,5 +1,4 @@
 # ── Prompt Layout ────────────────────────────────────────────────
-# Define the order and content of the prompt
 format = """
 $directory\
 ${custom.jj}\
@@ -8,27 +7,18 @@ $kubernetes\
 $cmd_duration\
 $line_break\
 ${custom.jj_desc}\
-$golang\
-$nodejs\
-$python\
-$rust\
-$terraform\
+$golang$nodejs$python$rust$terraform\
 $character"""
 
-# Blank line between prompts for readability
-add_newline = true
-
-# Global command timeout — raised from 500ms default for jj in large repos
+add_newline = false
 command_timeout = 2000
 
-# ── Character (prompt symbol) ────────────────────────────────────
-# Green arrow on success, red on error
+# ── Character ───────────────────────────────────────────────────
 [character]
 success_symbol = "[❯](bold green)"
 error_symbol = "[❯](bold red)"
 
-# ── Directory ────────────────────────────────────────────────────
-# Truncate to 4 parent dirs, highlight repo root
+# ── Directory ───────────────────────────────────────────────────
 [directory]
 truncation_length = 4
 truncate_to_repo = false
@@ -36,79 +26,65 @@ style = "bold cyan"
 repo_root_style = "bold cyan underline"
 repo_root_format = "[$before_root_path]($before_repo_root_style)[$repo_root]($repo_root_style)[$path]($style)[$read_only]($read_only_style) "
 
-# ── Jujutsu (custom modules) ────────────────────────────────────
-# Line 1: change ID and parent branch (next to path)
+# ── Jujutsu ─────────────────────────────────────────────────────
+# Line 1: change ID, nearest ancestor bookmark, modified status
 [custom.jj]
-description = "Jujutsu change ID and parent branch"
-command = """jj log -r @ --no-graph -T 'separate(" ", change_id.shortest(), bookmarks.join(" ")) ++ if(parents.first().bookmarks(), " on " ++ parents.first().bookmarks().join(" ")) ++ if(!empty, " *")' 2>/dev/null"""
+command = """id=$(jj log -r @ --no-graph -T 'separate(" ", change_id.shortest(), bookmarks.join(" ")) ++ if(!empty, " (modified)")' 2>/dev/null); base=$(jj log -r 'latest(ancestors(@-) & bookmarks())' --no-graph -T 'bookmarks.join(" ")' 2>/dev/null); printf '%s' "$id"; [ -n "$base" ] && printf ' on %s' "$base""""
 detect_folders = [".jj"]
 ignore_timeout = true
 style = "bold purple"
 symbol = " "
 format = "[$symbol$output]($style) "
 
-# Line 2: change description (on its own line)
+# Line 2: change description
 [custom.jj_desc]
-description = "Jujutsu change description"
 command = """jj log -r @ --no-graph -T 'if(description, description.first_line().substr(0, 120), "(no description set, use `jj describe`)")' 2>/dev/null"""
 detect_folders = [".jj"]
 ignore_timeout = true
 style = "italic 248"
 format = "[$output]($style)\n"
 
-# ── Git (only in non-jj repos) ──────────────────────────────────
+# ── Git (non-jj repos only) ────────────────────────────────────
 [custom.git]
-description = "Git branch and status for non-jj repos"
-command = """branch=$(git branch --show-current 2>/dev/null || git rev-parse --short HEAD 2>/dev/null); dirty=$(git status --porcelain 2>/dev/null | head -1); printf '%s' "$branch"; [ -n "$dirty" ] && printf ' *'"""
+command = """jj root >/dev/null 2>&1 && exit 0; branch=$(git branch --show-current 2>/dev/null); [ -z "$branch" ] && branch=$(git rev-parse --short HEAD 2>/dev/null); printf ' %s' "$branch"; git diff --quiet HEAD 2>/dev/null || printf ' (modified)'; true"""
 detect_folders = [".git"]
-when = "! test -d .jj"
 style = "bold purple"
-symbol = " "
-format = "[$symbol$output]($style) "
+format = "([$output]($style) )"
 
-# Disable built-in git modules (replaced by custom.git above)
-[git_branch]
-disabled = true
-
-[git_status]
-disabled = true
-
-# ── Kubernetes ───────────────────────────────────────────────────
-# Show current context and namespace
+# ── Kubernetes ──────────────────────────────────────────────────
 [kubernetes]
 disabled = false
 symbol = "☸ "
 style = "bold blue"
 format = '[$symbol$context(/$namespace)]($style) '
 
-# ── Languages (only shown when relevant files are detected) ──────
+# ── Languages ───────────────────────────────────────────────────
 [golang]
 symbol = " "
 style = "bold cyan"
-format = "[Go $symbol$version]($style) "
+format = "[Go $symbol$version]($style)\n"
 
 [nodejs]
 symbol = " "
 style = "bold green"
-format = "[Node $symbol$version]($style) "
+format = "[Node $symbol$version]($style)\n"
 
 [python]
 symbol = " "
 style = "bold yellow"
-format = "[Python $symbol$version]($style) "
+format = "[Python $symbol$version]($style)\n"
 
 [rust]
 symbol = " "
 style = "bold red"
-format = "[Rust $symbol$version]($style) "
+format = "[Rust $symbol$version]($style)\n"
 
 [terraform]
 symbol = "󱁢 "
 style = "bold 105"
-format = "[Terraform $symbol$version($workspace)]($style) "
+format = "[Terraform $symbol$version($workspace)]($style)\n"
 
-# ── Command Duration ─────────────────────────────────────────────
-# Show elapsed time for commands that take longer than 3 seconds
+# ── Command Duration ────────────────────────────────────────────
 [cmd_duration]
 min_time = 3000
 style = "bold yellow"
