@@ -2,6 +2,17 @@
 
 Dev environment bootstrap for Linux Mint. One script installs and configures everything.
 
+![Kitty terminal with tiling layout, Starship prompt, and Claude Code](assets/dotfiles.png)
+
+## Highlights
+
+- **Click-to-focus notifications** -- Claude Code tasks send desktop notifications that jump to the correct terminal window when clicked, and auto-dismiss when you're already looking at it
+
+  ![Claude Code notification with click-to-focus](assets/claude-noti.png)
+
+- **Smart VCS prompt** -- Starship shows jj change IDs with nearest ancestor bookmark, or git branch with short hash on detached HEAD. Modified status at a glance, no duplicate indicators in colocated repos
+- **Per-project tab coloring** -- each Claude Code session gets a unique Kitty tab color so you can tell projects apart instantly
+
 ## What's included
 
 - **Kitty** terminal with Adventure Time theme, tiling layouts, and tuned performance
@@ -32,4 +43,4 @@ Then open a new Kitty terminal.
 
 ## Updating configs
 
-Edit the files under `configs/`, then re-run `./install.sh` — it will overwrite the deployed copies. Tool installations are skipped if already present.
+Edit the files under `configs/`, then re-run `./install.sh` -- it will overwrite the deployed copies. Tool installations are skipped if already present.
