@@ -18,6 +18,7 @@
     ]
   },
   "model": "opus[1m]",
+  "effortLevel": "high",
   "hooks": {
     "SessionStart": [
       {
