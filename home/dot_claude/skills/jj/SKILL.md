@@ -15,6 +15,22 @@ Use `jj` instead of `git` for all version control operations. Use `gh` for GitHu
 - Remote ops: `jj git push` / `jj git fetch`.
 - View history: `jj log`, `jj diff`, `jj st`.
 - Conflicts are materialized in the working copy — edit files directly to resolve.
+- Every command is recorded in an operation log — `jj undo` reverses the last operation, `jj op log` shows history.
+- No merge command — `jj new A B C` creates a change with multiple parents.
+
+## Revsets quick reference
+
+| Expression | Meaning |
+|-----------|---------|
+| `@` | Current working copy change |
+| `@-` | Parent of `@` |
+| `rev+` | First child of `rev` |
+| `A..B` | Commits after A up to and including B |
+| `::rev` | All ancestors of `rev` |
+| `rev::` | All descendants of `rev` |
+| `trunk()` | Main/master branch |
+| `mutable()` | Non-immutable commits |
+| `stack()` | Current stack of mutable changes |
 
 ## Golden rule: never rewrite already-pushed commits
 
@@ -26,6 +42,10 @@ Rewriting (squash, edit, rebase) changes the git hash -> force-push. Since repos
 | `jj squash` | Fold `@` into parent — **only for unpushed changes** |
 | `jj rebase -d main` | Update base after main changes (unavoidable force-push) |
 | `jj edit <rev>` | Quick fix to an unpushed change in-place |
+| `jj split` | Interactively break `@` into multiple changes |
+| `jj abandon` | Remove changes from history (defaults to `@`) |
+| `jj restore --from <rev> <path>` | Restore a file from a previous change |
+| `jj absorb` | Auto-distribute hunks in `@` into the ancestor that last touched those lines |
 
 ## GitHub PR workflow
 

@@ -6,3 +6,20 @@ email = {{ .email | quote }}
 
 [ui]
 diff-formatter = ["difft", "--color=always", "$left", "$right"]
+diff-editor = ["code", "--wait", "--diff"]
+
+[revsets]
+# Only show current work + one trunk commit for context by default.
+# Use `jj log -r <revset>` to query beyond this.
+log = "(trunk()..@):: | (trunk()..@)-"
+
+[revset-aliases]
+# Override default (which uses untracked_remote_bookmarks()) to make ALL
+# pushed commits immutable — prevents accidental rewriting + force-push.
+"immutable_heads()" = "present(trunk()) | tags() | remote_bookmarks()"
+# Nearest ancestor of `to` that is mutable, described, and non-empty.
+'closest_pushable(to)' = 'heads(::to & mutable() & ~description(exact:"") & (~empty() | merges()))'
+
+[aliases]
+# Move closest bookmark to the closest pushable change.
+tug = ["bookmark", "move", "--from", "heads(::@ & bookmarks())", "--to", "closest_pushable(@)"]
