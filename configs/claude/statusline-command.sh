@@ -1,0 +1,286 @@
+#!/bin/sh
+# Claude Code status line
+# Adapted from https://github.com/andrewburgess/dotfiles
+
+input=$(cat)
+
+cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd // empty')
+model=$(echo "$input" | jq -r '.model.display_name // empty')
+used_pct=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
+input_tokens=$(echo "$input" | jq -r '.context_window.total_input_tokens // .context_window.current_usage.input_tokens // empty')
+output_tokens=$(echo "$input" | jq -r '.context_window.total_output_tokens // .context_window.current_usage.output_tokens // empty')
+
+parent_folder=$(basename "$cwd")
+
+# ANSI color codes
+BLUE_FG='\033[38;2;88;166;255m'
+GREEN_FG='\033[38;2;31;136;61m'
+SEP_FG='\033[38;2;88;166;255m'
+STATS_FG='\033[38;2;180;190;200m'
+BOLD='\033[1m'
+RESET='\033[0m'
+GIT_RED='\033[38;2;255;80;80m'
+GIT_GREEN='\033[38;2;80;220;80m'
+
+# ── VCS info ────────────────────────────────────────────────────
+vcs_branch=""
+vcs_status=""
+
+if jj root --quiet -R "$cwd" >/dev/null 2>&1; then
+    # Jujutsu repo — show change ID + nearest bookmark
+    change_id=$(jj log -r @ --no-graph -R "$cwd" -T 'change_id.shortest()' 2>/dev/null)
+    bookmarks=$(jj log -r @ --no-graph -R "$cwd" -T 'bookmarks.join(", ")' 2>/dev/null)
+    ancestor_bookmark=$(jj log -r 'latest(ancestors(@-) & bookmarks())' --no-graph -R "$cwd" -T 'bookmarks.join(", ")' 2>/dev/null)
+    vcs_branch="$change_id"
+    [ -n "$bookmarks" ] && vcs_branch="${vcs_branch} (${bookmarks})"
+    [ -n "$ancestor_bookmark" ] && vcs_branch="${vcs_branch} on ${ancestor_bookmark}"
+
+    # Check if working copy has changes
+    if jj diff --stat -R "$cwd" 2>/dev/null | grep -q .; then
+        vcs_status=" $(printf "${BOLD}${GIT_RED}[!]${RESET}")"
+    fi
+elif git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    # Plain git repo — show branch + status indicators
+    branch=$(git -C "$cwd" --no-optional-locks symbolic-ref --short HEAD 2>/dev/null \
+        || git -C "$cwd" --no-optional-locks rev-parse --short HEAD 2>/dev/null)
+
+    if [ -n "$branch" ]; then
+        git_indicators=""
+        porcelain=$(git -C "$cwd" --no-optional-locks status --porcelain 2>/dev/null)
+        has_unstaged=0
+        has_staged=0
+        has_untracked=0
+        while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            x="${line%"${line#?}"}"
+            y="${line#?}"; y="${y%"${y#?}"}"
+            if [ "$x" = "?" ] && [ "$y" = "?" ]; then
+                has_untracked=1
+            else
+                [ "$x" != " " ] && [ "$x" != "?" ] && has_staged=1
+                [ "$y" != " " ] && [ "$y" != "?" ] && has_unstaged=1
+            fi
+        done <<EOF
+$porcelain
+EOF
+
+        bracket=""
+        [ "$has_unstaged" -eq 1 ] && bracket="${bracket}!"
+        [ "$has_staged" -eq 1 ]   && bracket="${bracket}+"
+        [ "$has_untracked" -eq 1 ] && bracket="${bracket}?"
+        if [ -n "$bracket" ]; then
+            git_indicators="${git_indicators} $(printf "${BOLD}${GIT_RED}[%s]${RESET}" "$bracket")"
+        fi
+
+        diff_stat=$(git -C "$cwd" --no-optional-locks diff --numstat 2>/dev/null)
+        staged_stat=$(git -C "$cwd" --no-optional-locks diff --cached --numstat 2>/dev/null)
+        added=0
+        deleted=0
+        while IFS=$(printf '\t') read -r a d _rest; do
+            [ -n "$a" ] && [ "$a" != "-" ] && added=$((added + a))
+            [ -n "$d" ] && [ "$d" != "-" ] && deleted=$((deleted + d))
+        done <<EOF
+$diff_stat
+$staged_stat
+EOF
+        [ "$added" -gt 0 ] && git_indicators="${git_indicators} $(printf "${BOLD}${GIT_GREEN}+${added}${RESET}")"
+        [ "$deleted" -gt 0 ] && git_indicators="${git_indicators} $(printf "${BOLD}${GIT_RED}-${deleted}${RESET}")"
+
+        vcs_branch="$branch"
+        vcs_status="$git_indicators"
+    fi
+fi
+
+# ── Context usage progress bar (30 blocks, blue→red gradient) ───
+ctx=""
+if [ -n "$used_pct" ]; then
+    filled=$(printf "%.0f" "$(echo "$used_pct * 30 / 100" | bc -l)")
+    [ "$filled" -gt 30 ] && filled=30
+    empty=$((30 - filled))
+
+    bar=""
+    i=0
+    while [ "$i" -lt "$filled" ]; do
+        t_num=$(echo "scale=10; ($i * 100 / 30 + 100 / 30 / 2) / 100" | bc -l)
+        tip_r=$(printf "%.0f" "$(echo "88 + (255 - 88) * $t_num" | bc -l)")
+        tip_g=$(printf "%.0f" "$(echo "166 + (80  - 166) * $t_num" | bc -l)")
+        tip_b=$(printf "%.0f" "$(echo "255 + (80  - 255) * $t_num" | bc -l)")
+        bar="${bar}$(printf '\033[38;2;%d;%d;%dm█\033[0m' "$tip_r" "$tip_g" "$tip_b")"
+        i=$((i + 1))
+    done
+
+    # Empty blocks — desaturated and dimmed
+    tip_r=$(printf "%.0f" "$(echo "88 + (255 - 88) * $used_pct / 100" | bc -l)")
+    tip_g=$(printf "%.0f" "$(echo "166 + (80  - 166) * $used_pct / 100" | bc -l)")
+    tip_b=$(printf "%.0f" "$(echo "255 + (80  - 255) * $used_pct / 100" | bc -l)")
+    luma=$(printf "%.0f" "$(echo "0.299 * $tip_r + 0.587 * $tip_g + 0.114 * $tip_b" | bc -l)")
+    dr=$(printf "%.0f" "$(echo "($tip_r * 0.20 + $luma * 0.80) * 0.30" | bc -l)")
+    dg=$(printf "%.0f" "$(echo "($tip_g * 0.20 + $luma * 0.80) * 0.30" | bc -l)")
+    db=$(printf "%.0f" "$(echo "($tip_b * 0.20 + $luma * 0.80) * 0.30" | bc -l)")
+    i=0
+    while [ "$i" -lt "$empty" ]; do
+        bar="${bar}$(printf '\033[38;2;%d;%d;%dm░\033[0m' "$dr" "$dg" "$db")"
+        i=$((i + 1))
+    done
+
+    fmt_tokens() {
+        n="$1"
+        if [ "$n" -ge 1000000 ]; then
+            printf "%.1fM" "$(echo "scale=1; $n / 1000000" | bc)"
+        elif [ "$n" -ge 1000 ]; then
+            printf "%.1fk" "$(echo "scale=1; $n / 1000" | bc)"
+        else
+            printf "%d" "$n"
+        fi
+    }
+    token_info=""
+    if [ -n "$input_tokens" ]; then
+        fmt_in=$(fmt_tokens "$input_tokens")
+        fmt_out=$(fmt_tokens "${output_tokens:-0}")
+        token_info=" (↑${fmt_in} ↓${fmt_out})"
+    fi
+    ctx=$(printf "%b %.0f%%%s" "$bar" "$used_pct" "$token_info")
+fi
+
+# ── Rate limit indicators ──────────────────────────────────────
+rate_color() {
+    pct="$1"
+    r=$(printf "%.0f" "$(echo "88 + (255 - 88) * $pct / 100" | bc -l)")
+    g=$(printf "%.0f" "$(echo "166 + (80  - 166) * $pct / 100" | bc -l)")
+    b=$(printf "%.0f" "$(echo "255 + (80  - 255) * $pct / 100" | bc -l)")
+    printf '\033[38;2;%d;%d;%dm' "$r" "$g" "$b"
+}
+
+rate_indicator() {
+    pct="$1"
+    label="$2"
+    rounded=$(printf "%.0f" "$pct")
+    if [ "$rounded" -ge 50 ]; then
+        circle="●"
+    else
+        circle="○"
+    fi
+    color=$(rate_color "$pct")
+    printf '%b%s %s\033[0m' "$color" "$circle" "$label"
+}
+
+five_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
+seven_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
+session_cost=$(echo "$input" | jq -r '.cost.total_cost_usd // empty')
+
+rate_icons=""
+budget_indicator=""
+
+if [ -n "$five_pct" ] || [ -n "$seven_pct" ]; then
+    if [ -n "$five_pct" ]; then
+        rate_icons="${rate_icons}$(rate_indicator "$five_pct" "5h")"
+    fi
+    if [ -n "$seven_pct" ]; then
+        [ -n "$rate_icons" ] && rate_icons="${rate_icons}$(printf "${SEP_FG} | ${RESET}")"
+        rate_icons="${rate_icons}$(rate_indicator "$seven_pct" "7d")"
+    fi
+fi
+
+# ── Monthly budget tracking (API plan) ─────────────────────────
+if [ -n "$session_cost" ]; then
+    MONTHLY_BUDGET=1000
+    BUDGET_FILE="$HOME/.claude/budget-tracker.json"
+    current_month=$(date +%Y-%m)
+    session_id=$(echo "$input" | jq -r '.session_id // empty')
+
+    if [ ! -f "$BUDGET_FILE" ] || ! jq -e '.month' "$BUDGET_FILE" >/dev/null 2>&1; then
+        printf '{"month":"%s","sessions":{},"total_spent":0}' "$current_month" > "$BUDGET_FILE"
+    fi
+
+    stored_month=$(jq -r '.month' "$BUDGET_FILE")
+    if [ "$stored_month" != "$current_month" ]; then
+        printf '{"month":"%s","sessions":{},"total_spent":0}' "$current_month" > "$BUDGET_FILE"
+    fi
+
+    last_cost=$(jq -r --arg sid "$session_id" '.sessions[$sid] // 0' "$BUDGET_FILE")
+    delta=$(echo "$session_cost - $last_cost" | bc -l)
+    is_negative=$(echo "$delta < 0" | bc -l)
+    [ "$is_negative" -eq 1 ] && delta="$session_cost"
+
+    new_total=$(jq -r '.total_spent' "$BUDGET_FILE")
+    new_total=$(echo "$new_total + $delta" | bc -l)
+    jq --arg sid "$session_id" \
+       --argjson cost "$session_cost" \
+       --argjson total "$new_total" \
+       '.sessions[$sid] = $cost | .total_spent = $total' \
+       "$BUDGET_FILE" > "${BUDGET_FILE}.tmp" && mv "${BUDGET_FILE}.tmp" "$BUDGET_FILE"
+
+    remaining=$(echo "$MONTHLY_BUDGET - $new_total" | bc -l)
+    is_neg=$(echo "$remaining < 0" | bc -l)
+    [ "$is_neg" -eq 1 ] && remaining="0"
+    spent_pct=$(echo "scale=2; $new_total * 100 / $MONTHLY_BUDGET" | bc -l)
+    is_over=$(echo "$spent_pct > 100" | bc -l)
+    [ "$is_over" -eq 1 ] && spent_pct="100"
+
+    remaining_pct=$(echo "100 - $spent_pct" | bc -l)
+    filled=$(printf "%.0f" "$(echo "$remaining_pct * 30 / 100" | bc -l)")
+    [ "$filled" -gt 30 ] && filled=30
+    [ "$filled" -lt 0 ] && filled=0
+    empty_blocks=$((30 - filled))
+
+    budget_bar=""
+    i=0
+    while [ "$i" -lt "$filled" ]; do
+        tip_r=$(printf "%.0f" "$(echo "88 + (255 - 88) * $spent_pct / 100" | bc -l)")
+        tip_g=$(printf "%.0f" "$(echo "166 + (80  - 166) * $spent_pct / 100" | bc -l)")
+        tip_b=$(printf "%.0f" "$(echo "255 + (80  - 255) * $spent_pct / 100" | bc -l)")
+        budget_bar="${budget_bar}$(printf '\033[38;2;%d;%d;%dm█\033[0m' "$tip_r" "$tip_g" "$tip_b")"
+        i=$((i + 1))
+    done
+
+    tip_r=$(printf "%.0f" "$(echo "88 + (255 - 88) * $spent_pct / 100" | bc -l)")
+    tip_g=$(printf "%.0f" "$(echo "166 + (80  - 166) * $spent_pct / 100" | bc -l)")
+    tip_b=$(printf "%.0f" "$(echo "255 + (80  - 255) * $spent_pct / 100" | bc -l)")
+    luma_b=$(printf "%.0f" "$(echo "0.299 * $tip_r + 0.587 * $tip_g + 0.114 * $tip_b" | bc -l)")
+    dr_b=$(printf "%.0f" "$(echo "($tip_r * 0.20 + $luma_b * 0.80) * 0.30" | bc -l)")
+    dg_b=$(printf "%.0f" "$(echo "($tip_g * 0.20 + $luma_b * 0.80) * 0.30" | bc -l)")
+    db_b=$(printf "%.0f" "$(echo "($tip_b * 0.20 + $luma_b * 0.80) * 0.30" | bc -l)")
+    i=0
+    while [ "$i" -lt "$empty_blocks" ]; do
+        budget_bar="${budget_bar}$(printf '\033[38;2;%d;%d;%dm░\033[0m' "$dr_b" "$dg_b" "$db_b")"
+        i=$((i + 1))
+    done
+
+    fmt_remaining=$(printf "\$%.2f" "$remaining")
+    fmt_total=$(printf "\$%.2f" "$new_total")
+    fmt_session=$(printf "\$%.2f" "$session_cost")
+
+    budget_indicator=$(printf "%b %s left (%s spent, session: %s)" "$budget_bar" "$fmt_remaining" "$fmt_total" "$fmt_session")
+fi
+
+# ── Output ──────────────────────────────────────────────────────
+printf "${BLUE_FG}${BOLD}%s${RESET}" "$parent_folder"
+
+if [ -n "$vcs_branch" ]; then
+    printf "${SEP_FG} | ${GREEN_FG}%s${RESET}" "$vcs_branch"
+    if [ -n "$vcs_status" ]; then
+        printf "%b" "$vcs_status"
+    fi
+fi
+
+printf "${SEP_FG} | ${STATS_FG}%s${RESET}" "$model"
+
+second_line=""
+if [ -n "$ctx" ]; then
+    second_line="${second_line}$(printf "${STATS_FG}%b${RESET}" "$ctx")"
+fi
+
+if [ -n "$rate_icons" ]; then
+    if [ -n "$second_line" ]; then
+        second_line="${second_line}$(printf "${SEP_FG} | ${RESET}")"
+    fi
+    second_line="${second_line}$(printf "${STATS_FG}%b${RESET}" "$rate_icons")"
+fi
+
+if [ -n "$second_line" ]; then
+    printf "\n%b" "$second_line"
+fi
+
+if [ -n "$budget_indicator" ]; then
+    printf "\n%b" "$(printf "${STATS_FG}%b${RESET}" "$budget_indicator")"
+fi

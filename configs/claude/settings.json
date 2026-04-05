@@ -19,6 +19,10 @@
   },
   "model": "opus[1m]",
   "effortLevel": "high",
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/statusline-command.sh"
+  },
   "hooks": {
     "SessionStart": [
       {
