@@ -1,8 +1,8 @@
 #:schema https://docs.jj-vcs.dev/latest/config-schema.json
 
 [user]
-name = "Tristan Burgess"
-email = "tburgessdev@gmail.com"
+name = {{ .name | quote }}
+email = {{ .email | quote }}
 
 [ui]
 diff-formatter = ["difft", "--color=always", "$left", "$right"]

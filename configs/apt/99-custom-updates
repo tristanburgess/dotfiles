@@ -1,1 +1,0 @@
-DPkg::Post-Invoke { "##HOME##/bin/update-custom-tools.sh || true"; };

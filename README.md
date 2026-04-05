@@ -1,8 +1,8 @@
 # dotfiles
 
-Dev environment bootstrap for Ubuntu-compatible x64 distros (Ubuntu, Linux Mint, Pop!_OS, elementary OS, etc.). One script installs and configures everything.
+Dev environment bootstrap for Ubuntu-compatible x64 distros (Ubuntu, Linux Mint, Pop!_OS, elementary OS, etc.). Managed by [chezmoi](https://www.chezmoi.io/).
 
-![Kitty terminal with tiling layout, Starship prompt, and Claude Code](assets/dotfiles.png)
+![Kitty terminal with tiling layout, Starship prompt, and Claude Code with status bar](assets/dotfiles.png)
 
 ## Highlights
 
@@ -41,14 +41,21 @@ All developer tools are installed and kept up to date by [mise](https://mise.jdx
 
 ## Usage
 
+### Fresh install
+
 ```bash
-git clone <this-repo> ~/dev/code/dotfiles
-cd ~/dev/code/dotfiles
-chmod +x install.sh
-./install.sh
+# Install chezmoi and apply dotfiles in one command
+sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply tristanburgess/dotfiles
 ```
 
-After install, complete the manual steps:
+Or if you prefer to clone manually:
+
+```bash
+git clone git@github.com:tristanburgess/dotfiles.git
+chezmoi init --source dotfiles/ --apply
+```
+
+On first run, chezmoi prompts for your name and email (used in jj/git config). After install:
 
 ```bash
 source ~/.bashrc
@@ -58,6 +65,33 @@ claude  # authenticate Claude Code
 
 Then open a new Kitty terminal.
 
-## Updating configs
+### Updating configs
 
-Edit the files under `configs/`, then re-run `./install.sh` -- it will overwrite the deployed copies. Tool installations are skipped if already present.
+Edit files under `home/` using chezmoi naming conventions, then:
+
+```bash
+chezmoi apply    # deploy changes to ~
+chezmoi diff     # preview what would change
+```
+
+Or edit deployed files directly and pull changes back:
+
+```bash
+chezmoi re-add   # update source from deployed files
+```
+
+## Structure
+
+```
+dotfiles/
+├── .chezmoiroot              # points chezmoi to home/ as source root
+├── home/                     # chezmoi source state
+│   ├── .chezmoi.toml.tmpl    # chezmoi config (prompts for name/email)
+│   ├── .chezmoiignore        # files chezmoi shouldn't manage
+│   ├── .chezmoiscripts/      # setup scripts (packages, fonts, shell integrations)
+│   ├── dot_config/           # → ~/.config/ (kitty, starship, jj, nvim)
+│   ├── dot_claude/           # → ~/.claude/ (settings, hooks, skills)
+│   └── bin/                  # → ~/bin/
+├── assets/                   # README screenshots
+└── README.md
+```

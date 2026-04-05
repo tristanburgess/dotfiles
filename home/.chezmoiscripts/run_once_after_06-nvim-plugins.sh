@@ -1,0 +1,5 @@
+#!/bin/bash
+set -euo pipefail
+
+eval "$("$HOME/.local/bin/mise" activate bash)"
+nvim --headless "+Lazy! sync" +qa 2>/dev/null || true

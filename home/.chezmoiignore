@@ -1,0 +1,7 @@
+# Files managed by run scripts or created at runtime
+.claude/claude-logo.png
+.claude/budget-tracker.json
+.claude/projects/**
+.claude/memory/**
+.claude/todos/**
+.claude/plans/**
