@@ -12,17 +12,32 @@ Dev environment bootstrap for Linux Mint. One script installs and configures eve
 
 - **Smart VCS prompt** -- Starship shows jj change IDs with nearest ancestor bookmark, or git branch with short hash on detached HEAD. Modified status at a glance, no duplicate indicators in colocated repos
 - **Per-project tab coloring** -- each Claude Code session gets a unique Kitty tab color so you can tell projects apart instantly
+- **Rich status line** -- Claude Code status bar shows VCS state, context window usage with blue-to-red gradient, rate limit indicators, and monthly budget tracking
 
 ## What's included
+
+### Tools (managed by [mise](https://mise.jdx.dev/))
+
+All developer tools are installed and kept up to date by [mise](https://mise.jdx.dev/), a polyglot runtime/tool version manager:
 
 - **[Kitty](https://sw.kovidgoyal.net/kitty/)** terminal with Adventure Time theme, tiling layouts, and tuned performance
 - **[Starship](https://starship.rs/)** prompt with [Jujutsu (jj)](https://jj-vcs.github.io/jj/) change/bookmark display, git fallback, k8s context, and language version indicators
 - **[Neovim](https://neovim.io/)** with [kitty-scrollback.nvim](https://github.com/mikesmithgh/kitty-scrollback.nvim) for easy copy/paste from terminal scrollback
+- **[Jujutsu (jj)](https://jj-vcs.github.io/jj/)** version control with [difftastic](https://difftastic.wilfred.me/) structural diffs
+- **[GitHub CLI (gh)](https://cli.github.com/)** for PRs, issues, and API calls
+- **[zoxide](https://github.com/ajr-f0/zoxide)** for fast directory jumping (`z`)
+- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** AI coding assistant
+- **[Go](https://go.dev/)**, **[Rust](https://www.rust-lang.org/)**, **[Python 3](https://www.python.org/)**, **[Node.js](https://nodejs.org/)** (LTS)
+- **[jq](https://jqlang.github.io/jq/)** for JSON processing
+
+### Configs
+
 - **[JetBrainsMono Nerd Font](https://github.com/ryanoasis/nerd-fonts/tree/master/patched-fonts/JetBrainsMono)** for ligatures and icons
-- **[Jujutsu (jj)](https://jj-vcs.github.io/jj/)** version control
-- **Git** + **GitHub CLI** (gh)
-- **Go**, **Rust**, **Python 3**, **Node.js** (via nvm)
-- **Claude Code** with custom notification hooks (click-to-focus, auto-dismiss, sound) and per-project tab coloring
+- **Claude Code** hooks and customizations:
+  - `/jj` skill -- Jujutsu workflow reference loaded automatically during version control operations
+  - Click-to-focus desktop notifications with response preview and auto-dismiss
+  - Per-project Kitty tab coloring on session start
+  - Status line with VCS info, context window gradient bar, rate limit dots, and monthly budget tracker
 
 ## Usage
 
@@ -36,6 +51,7 @@ chmod +x install.sh
 After install, complete the manual steps:
 
 ```bash
+source ~/.bashrc
 gh auth login
 claude  # authenticate Claude Code
 ```

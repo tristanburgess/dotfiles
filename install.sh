@@ -140,14 +140,15 @@ nvim --headless "+Lazy! sync" +qa 2>/dev/null
 ok "Neovim config + plugins"
 
 # Claude Code
-mkdir -p "$HOME/.claude/hooks"
+mkdir -p "$HOME/.claude/hooks" "$HOME/.claude/skills/jj"
 cp "$DOTFILES_DIR/configs/claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
 cp "$DOTFILES_DIR/configs/claude/settings.json" "$HOME/.claude/settings.json"
 cp "$DOTFILES_DIR/configs/claude/hooks/session-color.sh" "$HOME/.claude/hooks/session-color.sh"
 cp "$DOTFILES_DIR/configs/claude/notify.sh" "$HOME/.claude/notify.sh"
 cp "$DOTFILES_DIR/configs/claude/statusline-command.sh" "$HOME/.claude/statusline-command.sh"
+cp "$DOTFILES_DIR/configs/claude/skills/jj/SKILL.md" "$HOME/.claude/skills/jj/SKILL.md"
 chmod +x "$HOME/.claude/hooks/session-color.sh" "$HOME/.claude/notify.sh" "$HOME/.claude/statusline-command.sh"
-ok "Claude Code config + hooks + statusline"
+ok "Claude Code config + hooks + statusline + skills"
 
 # Download Claude logo for notifications (if missing)
 if [ ! -f "$HOME/.claude/claude-logo.png" ]; then
