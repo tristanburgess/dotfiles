@@ -1,6 +1,6 @@
 # dotfiles
 
-Dev environment bootstrap for Linux Mint. One script installs and configures everything.
+Dev environment bootstrap for Ubuntu-compatible x64 distros (Ubuntu, Linux Mint, Pop!_OS, elementary OS, etc.). One script installs and configures everything.
 
 ![Kitty terminal with tiling layout, Starship prompt, and Claude Code](assets/dotfiles.png)
 
