@@ -67,6 +67,16 @@ gh auth login
 claude  # authenticate Claude Code
 ```
 
+To enable [signed commits](https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification#ssh-commit-signature-verification) (required by branch protection), generate an SSH key and add it to GitHub as a signing key:
+
+```bash
+ssh-keygen -t ed25519 -C "your@email.com"
+gh ssh-key add ~/.ssh/id_ed25519.pub --type signing --title "signing key"
+chezmoi apply  # re-apply to pick up the signing config in jj
+```
+
+If `~/.ssh/id_ed25519.pub` exists when chezmoi runs, jj is automatically configured to sign all commits.
+
 Then open a new Kitty terminal.
 
 ### Updating configs
