@@ -41,6 +41,7 @@ All developer tools are installed and kept up to date by [mise](https://mise.jdx
   - Click-to-focus desktop notifications with response preview and auto-dismiss
   - Per-project Kitty tab coloring on session start
   - Status line with VCS info, context window gradient bar, rate limit dots, and monthly budget tracker
+- **Automated dependency updates** via [Renovate](https://docs.renovatebot.com/) -- tool versions are pinned in [`mise config`](home/dot_config/mise/config.toml) and Renovate opens PRs with changelogs when new releases are available. Patch/minor updates auto-merge; major updates require manual review
 
 ## Usage
 
@@ -83,6 +84,14 @@ Or edit deployed files directly and pull changes back:
 chezmoi re-add   # update source from deployed files
 ```
 
+## Tool updates
+
+Tool versions are pinned in [`home/dot_config/mise/config.toml`](home/dot_config/mise/config.toml) and deployed by chezmoi. [Renovate](https://docs.renovatebot.com/modules/manager/mise/) monitors upstream releases and opens PRs with changelogs and release notes. Patch and minor updates auto-merge; major version bumps require manual review.
+
+When you pull a version bump (via `chezmoi update` or merging a Renovate PR), chezmoi detects the config change and re-runs `mise install` to upgrade the affected tools.
+
+To install Renovate on your fork, add the free [Mend Renovate GitHub App](https://github.com/apps/renovate).
+
 ## Structure
 
 ```
@@ -92,7 +101,7 @@ dotfiles/
 │   ├── .chezmoi.toml.tmpl    # chezmoi config (prompts for name/email)
 │   ├── .chezmoiignore        # files chezmoi shouldn't manage
 │   ├── .chezmoiscripts/      # setup scripts (packages, fonts, shell integrations)
-│   ├── dot_config/           # → ~/.config/ (kitty, starship, jj, nvim)
+│   ├── dot_config/           # → ~/.config/ (kitty, starship, jj, nvim, mise)
 │   ├── dot_claude/           # → ~/.claude/ (settings, hooks, skills)
 │   └── bin/                  # → ~/bin/
 ├── assets/                   # README screenshots

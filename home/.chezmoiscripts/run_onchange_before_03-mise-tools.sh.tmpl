@@ -1,0 +1,6 @@
+#!/bin/bash
+# hash: {{ include "dot_config/mise/config.toml" | sha256sum }}
+set -euo pipefail
+
+eval "$("$HOME/.local/bin/mise" activate bash)"
+mise install --yes
