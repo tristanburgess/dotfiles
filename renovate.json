@@ -8,7 +8,7 @@
     {
       "customType": "regex",
       "managerFilePatterns": [
-        "/home/dot_config/mise/config\.toml$/"
+        "/home/dot_config/mise/config\\.toml$/"
       ],
       "matchStrings": [
         "# renovate: packageName=(?<packageName>[^\\s]+) datasource=(?<datasource>[^\\s]+)\\n[\\w-]+ = \"(?<currentValue>[^\"]+)\""
