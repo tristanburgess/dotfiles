@@ -23,6 +23,9 @@
     "type": "command",
     "command": "bun ~/.claude/statusline-command.js"
   },
+  "enabledPlugins": {
+    "gopls-lsp@claude-plugins-official": true
+  },
   "hooks": {
     "SessionStart": [
       {

@@ -315,6 +315,18 @@ function buildBudgetIndicator(sessionCost, sessionId) {
     return `${bar} ${fmt(remaining)} left (${fmt(spent)} spent)`
 }
 
+// ─── Width helpers ────────────────────────────────────────────────────────────
+
+/** Strip ANSI escape sequences to measure visible character length. */
+function visibleLength(str) {
+    return str.replace(/\x1b\[[0-9;]*m/g, "").length
+}
+
+const termWidth =
+    process.stdout.columns ||
+    parseInt(process.env.COLUMNS, 10) ||
+    80
+
 // ─── Assemble output ──────────────────────────────────────────────────────────
 
 const parentFolder = basename(cwd) || cwd
@@ -332,18 +344,31 @@ const budgetIndicator = isApiPlan
     : null
 
 // Line 1: folder | branch <indicators> | model
-let line1 = `${BLUE}${BOLD}${parentFolder}${RESET}`
+// If too wide, split VCS info onto its own line
+const folderPart = `${BLUE}${BOLD}${parentFolder}${RESET}`
+const modelPart = `${STATS}${model}${RESET}`
 
+let vcsPart = ""
 if (vcsSection) {
-    line1 += `${SEP} | ${RESET}${GREEN}${vcsSection.branch}${RESET}`
-    if (vcsSection.indicators) line1 += vcsSection.indicators
+    vcsPart = `${GREEN}${vcsSection.branch}${RESET}`
+    if (vcsSection.indicators) vcsPart += vcsSection.indicators
 }
 
-line1 += `${SEP} | ${RESET}${STATS}${model}${RESET}`
+const sep = `${SEP} | ${RESET}`
+
+// Try everything on one line first
+let line1 = folderPart
+if (vcsPart) line1 += sep + vcsPart
+line1 += sep + modelPart
+
+// If it overflows, move VCS to its own line
+if (visibleLength(line1) > termWidth && vcsPart) {
+    line1 = folderPart + sep + modelPart + "\n" + vcsPart
+}
 
 // Line 2: context bar | session cost | rate icons
 const line2Parts = [ctxBar, currentSessionCost, rateIcons].filter(Boolean)
-const line2 = line2Parts.length ? line2Parts.join(`${SEP} | ${RESET}`) : null
+const line2 = line2Parts.length ? line2Parts.join(sep) : null
 
 process.stdout.write(line1)
 if (line2) process.stdout.write(`\n${STATS}${line2}${RESET}`)
