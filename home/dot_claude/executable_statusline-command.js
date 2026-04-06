@@ -106,9 +106,9 @@ function buildJjSection() {
     if (bookmarks) branch += ` (${bookmarks})`
     if (ancestorBookmark) branch += ` on ${ancestorBookmark}`
 
-    // Check if working copy has changes
-    const diffStat = jj("diff", "--stat")
-    const indicators = diffStat ? ` ${BOLD}${RED}[!]${RESET}` : ""
+    // Check if working copy has changes (--summary is empty when clean)
+    const diffSummary = jj("diff", "--summary")
+    const indicators = diffSummary ? ` ${BOLD}${RED}[!]${RESET}` : ""
 
     return { branch, indicators }
 }
