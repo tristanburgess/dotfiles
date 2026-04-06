@@ -12,7 +12,9 @@ Dev environment bootstrap for Ubuntu-compatible x64 distros (Ubuntu, Linux Mint,
 
 - **Smart VCS prompt** -- Starship shows jj change IDs with nearest ancestor bookmark, or git branch with short hash on detached HEAD. Modified status at a glance, no duplicate indicators in colocated repos
 - **Per-project tab coloring** -- each Claude Code session gets a unique Kitty tab color so you can tell projects apart instantly
-- **Rich status line** -- Claude Code status bar shows VCS state, context window usage with blue-to-red gradient, rate limit indicators, and monthly budget tracking
+- **Rich status line** -- Claude Code status bar shows VCS state, context window usage with blue-to-red gradient, rate limit indicators, and monthly budget tracking. Adapted from [andrewburgess/dotfiles](https://github.com/andrewburgess/dotfiles)
+
+  ![Claude Code status bar with VCS state, context gradient, and budget tracking](assets/statusbar.png)
 
 ## What's included
 
