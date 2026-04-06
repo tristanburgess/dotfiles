@@ -30,5 +30,5 @@ tug = ["bookmark", "move", "--from", "heads(::@ & bookmarks())", "--to", "closes
 [signing]
 backend = "ssh"
 key = {{ include $sshPub | trim | quote }}
-sign-all = true
+behavior = "own"
 {{- end }}
