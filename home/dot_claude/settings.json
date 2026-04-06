@@ -21,7 +21,7 @@
   "effortLevel": "high",
   "statusLine": {
     "type": "command",
-    "command": "~/.claude/statusline-command.sh"
+    "command": "bun ~/.claude/statusline-command.js"
   },
   "hooks": {
     "SessionStart": [

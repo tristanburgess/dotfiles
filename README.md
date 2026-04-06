@@ -27,6 +27,7 @@ All developer tools are installed and kept up to date by [mise](https://mise.jdx
 - **[GitHub CLI (gh)](https://cli.github.com/)** for PRs, issues, and API calls
 - **[zoxide](https://github.com/ajr-f0/zoxide)** for fast directory jumping (`z`)
 - **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** AI coding assistant
+- **[Bun](https://bun.sh/)** JavaScript runtime (used by Claude Code status line)
 - **[Go](https://go.dev/)**, **[Rust](https://www.rust-lang.org/)**, **[Python 3](https://www.python.org/)**, **[Node.js](https://nodejs.org/)** (LTS)
 - **[jq](https://jqlang.github.io/jq/)** for JSON processing
 

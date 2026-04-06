@@ -18,5 +18,6 @@ mise use --global \
     starship@latest \
     claude-code@latest \
     kitty@latest \
+    bun@latest \
     chezmoi@latest \
     --yes
