@@ -29,7 +29,7 @@ repo_root_format = "[$before_root_path]($before_repo_root_style)[$repo_root]($re
 # ── Jujutsu ─────────────────────────────────────────────────────
 # Line 1: change ID, nearest ancestor bookmark, modified status
 [custom.jj]
-command = """id=$(jj log -r @ --no-graph -T 'separate(" ", change_id.shortest(), bookmarks.join(" ")) ++ if(!empty, " (modified)")' 2>/dev/null); base=$(jj log -r 'latest(ancestors(@-) & bookmarks())' --no-graph -T 'bookmarks.join(" ")' 2>/dev/null); printf '%s' "$id"; [ -n "$base" ] && printf ' on %s' "$base""""
+command = """id=$(jj --ignore-working-copy log -r @ --no-graph -T 'separate(" ", change_id.shortest(), bookmarks.join(" ")) ++ if(!empty, " (modified)")' 2>/dev/null); base=$(jj --ignore-working-copy log -r 'latest(ancestors(@-) & bookmarks())' --no-graph -T 'bookmarks.join(" ")' 2>/dev/null); printf '%s' "$id"; [ -n "$base" ] && printf ' on %s' "$base""""
 detect_folders = [".jj"]
 ignore_timeout = true
 style = "bold purple"
@@ -38,7 +38,7 @@ format = "[$symbol$output]($style) "
 
 # Line 2: change description
 [custom.jj_desc]
-command = """jj log -r @ --no-graph -T 'if(description, description.first_line().substr(0, 120), "(no description set, use `jj describe`)")' 2>/dev/null"""
+command = """jj --ignore-working-copy log -r @ --no-graph -T 'if(description, description.first_line().substr(0, 120), "(no description set, use `jj describe`)")' 2>/dev/null"""
 detect_folders = [".jj"]
 ignore_timeout = true
 style = "italic 248"

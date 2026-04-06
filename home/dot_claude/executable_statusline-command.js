@@ -75,7 +75,7 @@ function git(...args) {
 }
 
 function jj(...args) {
-    return run("jj", "-R", cwd, "--no-pager", ...args)
+    return run("jj", "--ignore-working-copy", "-R", cwd, "--no-pager", ...args)
 }
 
 // ─── Jujutsu info ─────────────────────────────────────────────────────────────
@@ -83,7 +83,7 @@ function jj(...args) {
 function buildJjSection() {
     if (!cwd) return null
 
-    const isRepo = spawnSync(["jj", "root", "--quiet", "-R", cwd], {
+    const isRepo = spawnSync(["jj", "--ignore-working-copy", "root", "--quiet", "-R", cwd], {
         stdout: "pipe",
         stderr: "pipe",
     }).exitCode === 0
@@ -106,8 +106,9 @@ function buildJjSection() {
     if (bookmarks) branch += ` (${bookmarks})`
     if (ancestorBookmark) branch += ` on ${ancestorBookmark}`
 
-    // Check if working copy has changes (--summary is empty when clean)
-    const diffSummary = jj("diff", "--summary")
+    // Check if working copy has changes — this is the only call that snapshots the working copy,
+    // so it takes the lock briefly but won't contend with other jj calls (all use --ignore-working-copy)
+    const diffSummary = run("jj", "-R", cwd, "--no-pager", "diff", "--summary")
     const indicators = diffSummary ? ` ${BOLD}${RED}[!]${RESET}` : ""
 
     return { branch, indicators }
