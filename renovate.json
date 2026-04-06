@@ -4,6 +4,15 @@
   "mise": {
     "managerFilePatterns": ["home/dot_config/mise/config.toml"]
   },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": ["home/dot_config/mise/config\\.toml$"],
+      "matchStrings": [
+        "# renovate: packageName=(?<packageName>[^\\s]+) datasource=(?<datasource>[^\\s]+)\\n[\\w-]+ = \"(?<currentValue>[^\"]+)\""
+      ]
+    }
+  ],
   "packageRules": [
     {
       "matchUpdateTypes": ["patch", "minor"],

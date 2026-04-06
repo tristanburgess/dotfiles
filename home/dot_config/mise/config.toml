@@ -1,17 +1,25 @@
 [tools]
 bun = "1.3.11"
+# renovate: packageName=twpayne/chezmoi datasource=github-releases
 chezmoi = "2.70.0"
+# renovate: packageName=@anthropic-ai/claude-code datasource=npm
 claude-code = "2.1.92"
+# renovate: packageName=Wilfred/difftastic datasource=github-releases
 difftastic = "0.68.0"
 gh = "2.89.0"
 go = "1.26.1"
 jq = "1.8.1"
+# renovate: packageName=jj-vcs/jj datasource=github-releases
 jujutsu = "0.40.0"
+# renovate: packageName=kovidgoyal/kitty datasource=github-releases
 kitty = "0.46.2"
+# renovate: packageName=neovim/neovim datasource=github-releases
 neovim = "0.12.0"
 node = "lts"
 rust = "1.94.1"
+# renovate: packageName=starship/starship datasource=github-releases
 starship = "1.24.2"
+# renovate: packageName=ajeetdsouza/zoxide datasource=github-releases
 zoxide = "0.9.9"
 
 [tool_alias]
