@@ -14,7 +14,7 @@ jujutsu = "0.40.0"
 # renovate: packageName=kovidgoyal/kitty datasource=github-releases
 kitty = "0.46.2"
 # renovate: packageName=neovim/neovim datasource=github-releases
-neovim = "0.12.0"
+neovim = "0.12.1"
 node = "lts"
 rust = "1.94.1"
 # renovate: packageName=starship/starship datasource=github-releases
