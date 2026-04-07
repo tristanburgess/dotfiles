@@ -1,3 +1,12 @@
+#!/bin/bash
+# Merge chezmoi-managed keys into the live settings.json, preserving
+# any runtime additions (plugins, marketplaces, etc.) that Claude Code
+# writes at runtime.
+#
+# chezmoi pipes the current target file contents to stdin.
+# We output the merged result to stdout.
+
+MANAGED='
 {
   "attribution": {
     "commit": "",
@@ -59,3 +68,15 @@
     ]
   }
 }
+'
+
+CURRENT=$(cat)
+
+if [ -z "$CURRENT" ] || [ "$CURRENT" = "{}" ]; then
+  echo "$MANAGED" | jq .
+  exit 0
+fi
+
+# Recursive merge: start with current (preserves runtime keys),
+# then overlay managed keys on top (managed always wins).
+echo "$CURRENT" | jq --argjson managed "$MANAGED" '. * $managed'
