@@ -7,7 +7,7 @@ claude-code = "2.1.92"
 # renovate: packageName=Wilfred/difftastic datasource=github-releases
 difftastic = "0.68.0"
 gh = "2.89.0"
-go = "1.26.1"
+go = "1.26.2"
 jq = "1.8.1"
 # renovate: packageName=jj-vcs/jj datasource=github-releases
 jujutsu = "0.40.0"
