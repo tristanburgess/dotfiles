@@ -42,9 +42,9 @@ R=$'\033[0m'
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 
-# Combined: change ID + bookmarks + description (single call instead of three)
+# Combined: change ID + bookmarks (single call instead of two)
 jj --ignore-working-copy log -r @ --no-graph \
-  -T 'change_id.shortest() ++ "\n" ++ local_bookmarks.join(" ") ++ "\n" ++ if(description, description.first_line().substr(0, 120), "(no description set, use `jj describe`)")' \
+  -T 'change_id.shortest() ++ "\n" ++ local_bookmarks.join(" ")' \
   > "$tmpdir/at" 2>/dev/null &
 
 # Ancestor bookmark
@@ -61,9 +61,6 @@ wait
 change_id=$(head -1 "$tmpdir/at")
 [ -z "$change_id" ] && exit 1
 bookmarks=$(sed -n '2p' "$tmpdir/at")
-desc=$(sed -n '3p' "$tmpdir/at")
-# Cache description for jj_desc module (runs in parallel, avoids extra jj call)
-[ -n "$desc" ] && printf '%s' "$desc" > /tmp/.starship-jj-desc
 id="$change_id"
 [ -n "$bookmarks" ] && id="$id $bookmarks"
 base=$(cat "$tmpdir/base")
@@ -100,9 +97,9 @@ detect_folders = [".jj"]
 ignore_timeout = true
 format = "($output )"
 
-# Line 2: change description (reads cache from custom.jj, falls back to jj call)
+# Line 2: change description
 [custom.jj_desc]
-command = '''cat /tmp/.starship-jj-desc 2>/dev/null || jj --ignore-working-copy log -r @ --no-graph -T 'if(description, description.first_line().substr(0, 120), "(no description set, use `jj describe`)")' 2>/dev/null'''
+command = '''jj --ignore-working-copy log -r @ --no-graph -T 'if(description, description.first_line().substr(0, 120), "(no description set, use `jj describe`)")' 2>/dev/null'''
 detect_folders = [".jj"]
 ignore_timeout = true
 style = "italic 248"

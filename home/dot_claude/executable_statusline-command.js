@@ -74,10 +74,6 @@ function git(...args) {
     return run("git", "-C", cwd, "--no-optional-locks", ...args)
 }
 
-function jj(...args) {
-    return run("jj", "--ignore-working-copy", "-R", cwd, "--no-pager", ...args)
-}
-
 // ─── Async spawn helper ──────────────────────────────────────────────────────
 
 async function runAsync(cmd, ...args) {
