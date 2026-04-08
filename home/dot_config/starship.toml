@@ -29,6 +29,7 @@ repo_root_format = "[$before_root_path]($before_repo_root_style)[$repo_root]($re
 # ── Jujutsu ─────────────────────────────────────────────────────
 # Line 1: change ID, nearest ancestor bookmark, diff stats (ANSI-colored)
 # Wraps to its own line if it would overflow terminal width
+# All jj calls run in parallel for speed on large repos
 [custom.jj]
 command = '''
 G=$'\033[38;2;31;136;61m'    # green (branch)
@@ -37,13 +38,40 @@ BG=$'\033[1;38;2;80;220;80m' # bold green (additions)
 P=$'\033[1;35m'              # bold purple (symbol)
 R=$'\033[0m'
 
-id=$(jj --ignore-working-copy log -r @ --no-graph -T 'separate(" ", change_id.shortest(), local_bookmarks.join(" "))' 2>/dev/null)
-base=$(jj --ignore-working-copy log -r 'latest(ancestors(@-) & bookmarks())' --no-graph -T 'local_bookmarks.join(" ")' 2>/dev/null)
+# Run all jj calls in parallel via background processes
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+
+# Combined: change ID + bookmarks + description (single call instead of three)
+jj --ignore-working-copy log -r @ --no-graph \
+  -T 'change_id.shortest() ++ "\n" ++ local_bookmarks.join(" ") ++ "\n" ++ if(description, description.first_line().substr(0, 120), "(no description set, use `jj describe`)")' \
+  > "$tmpdir/at" 2>/dev/null &
+
+# Ancestor bookmark
+jj --ignore-working-copy log -r 'latest(ancestors(@-) & bookmarks())' --no-graph \
+  -T 'local_bookmarks.join(" ")' \
+  > "$tmpdir/base" 2>/dev/null &
+
+# Diff stats (takes working-copy lock)
+jj diff --stat > "$tmpdir/stats" 2>/dev/null &
+
+wait
+
+# Parse parallel results
+change_id=$(head -1 "$tmpdir/at")
+[ -z "$change_id" ] && exit 1
+bookmarks=$(sed -n '2p' "$tmpdir/at")
+desc=$(sed -n '3p' "$tmpdir/at")
+# Cache description for jj_desc module (runs in parallel, avoids extra jj call)
+[ -n "$desc" ] && printf '%s' "$desc" > /tmp/.starship-jj-desc
+id="$change_id"
+[ -n "$bookmarks" ] && id="$id $bookmarks"
+base=$(cat "$tmpdir/base")
+stats=$(tail -1 "$tmpdir/stats")
 
 out="${P} ${R}${G}${id}${R}"
 [ -n "$base" ] && out="${out}${G} on ${base}${R}"
 
-stats=$(jj diff --stat 2>/dev/null | tail -1)
 files=$(echo "$stats" | grep -oP '\d+(?= file)'); files=${files:-0}
 if [ "$files" -gt 0 ] 2>/dev/null; then
   ins=$(echo "$stats" | grep -oP '\d+(?= insertion)'); ins=${ins:-0}
@@ -72,9 +100,9 @@ detect_folders = [".jj"]
 ignore_timeout = true
 format = "($output )"
 
-# Line 2: change description
+# Line 2: change description (reads cache from custom.jj, falls back to jj call)
 [custom.jj_desc]
-command = '''jj --ignore-working-copy log -r @ --no-graph -T 'if(description, description.first_line().substr(0, 120), "(no description set, use `jj describe`)")' 2>/dev/null'''
+command = '''cat /tmp/.starship-jj-desc 2>/dev/null || jj --ignore-working-copy log -r @ --no-graph -T 'if(description, description.first_line().substr(0, 120), "(no description set, use `jj describe`)")' 2>/dev/null'''
 detect_folders = [".jj"]
 ignore_timeout = true
 style = "italic 248"

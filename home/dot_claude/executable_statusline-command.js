@@ -78,9 +78,20 @@ function jj(...args) {
     return run("jj", "--ignore-working-copy", "-R", cwd, "--no-pager", ...args)
 }
 
+// ─── Async spawn helper ──────────────────────────────────────────────────────
+
+async function runAsync(cmd, ...args) {
+    const proc = Bun.spawn([cmd, ...args], { stdout: "pipe", stderr: "pipe" })
+    const [text, exitCode] = await Promise.all([
+        new Response(proc.stdout).text(),
+        proc.exited,
+    ])
+    return exitCode === 0 ? text.trim() : null
+}
+
 // ─── Jujutsu info ─────────────────────────────────────────────────────────────
 
-function buildJjSection() {
+async function buildJjSection() {
     if (!cwd) return null
 
     const isRepo = spawnSync(["jj", "--ignore-working-copy", "root", "--quiet", "-R", cwd], {
@@ -89,34 +100,31 @@ function buildJjSection() {
     }).exitCode === 0
     if (!isRepo) return null
 
-    const changeId = jj("log", "-r", "@", "--no-graph", "-T", "change_id.shortest()")
-    if (!changeId) return null
+    // Run all jj calls in parallel: combined (ID + bookmarks), ancestor bookmark, diff stat
+    const [atOut, ancestorBookmark, diffStat] = await Promise.all([
+        runAsync("jj", "--ignore-working-copy", "-R", cwd, "--no-pager",
+            "log", "-r", "@", "--no-graph", "-T",
+            'change_id.shortest() ++ "\\n" ++ local_bookmarks.join(", ")'),
+        runAsync("jj", "--ignore-working-copy", "-R", cwd, "--no-pager",
+            "log", "-r", "latest(ancestors(@-) & bookmarks())", "--no-graph", "-T",
+            'local_bookmarks.join(", ")'),
+        runAsync("jj", "-R", cwd, "--no-pager", "diff", "--stat"),
+    ])
 
-    const bookmarks = jj("log", "-r", "@", "--no-graph", "-T", 'local_bookmarks.join(", ")')
-    const ancestorBookmark = jj(
-        "log",
-        "-r",
-        "latest(ancestors(@-) & bookmarks())",
-        "--no-graph",
-        "-T",
-        'local_bookmarks.join(", ")'
-    )
+    if (!atOut) return null
+    const [changeId, bookmarks] = atOut.split("\n")
+    if (!changeId) return null
 
     let branch = changeId
     if (bookmarks) branch += ` (${bookmarks})`
     if (ancestorBookmark) branch += ` on ${ancestorBookmark}`
 
-    // Check if working copy has changes — this is the only call that snapshots the working copy,
-    // so it takes the lock briefly but won't contend with other jj calls (all use --ignore-working-copy)
-    const diffStat = run("jj", "-R", cwd, "--no-pager", "diff", "--stat")
-
+    // Parse diff stats from last line: "N files changed, M insertions(+), K deletions(-)"
     let dirty = ""
     let addStr = ""
     let delStr = ""
     let filesStr = ""
     if (diffStat) {
-        dirty = ` ${BOLD}${RED}[!]${RESET}`
-        // Last line: "N files changed, M insertions(+), K deletions(-)"
         const summary = diffStat.split("\n").pop() ?? ""
         const insMatch = summary.match(/(\d+) insertion/)
         const delMatch = summary.match(/(\d+) deletion/)
@@ -124,9 +132,12 @@ function buildJjSection() {
         const ins = insMatch ? parseInt(insMatch[1], 10) : 0
         const del = delMatch ? parseInt(delMatch[1], 10) : 0
         const files = filesMatch ? parseInt(filesMatch[1], 10) : 0
-        if (ins > 0) addStr = ` ${BOLD}${LTGRN}+${ins}${RESET}`
-        if (del > 0) delStr = ` ${BOLD}${RED}-${del}${RESET}`
-        if (files > 0) filesStr = ` *${files}`
+        if (files > 0) {
+            dirty = ` ${BOLD}${RED}[!]${RESET}`
+            if (ins > 0) addStr = ` ${BOLD}${LTGRN}+${ins}${RESET}`
+            if (del > 0) delStr = ` ${BOLD}${RED}-${del}${RESET}`
+            filesStr = ` *${files}`
+        }
     }
 
     const indicators = dirty + addStr + delStr + filesStr
@@ -226,8 +237,8 @@ function buildGitSection() {
 
 // ─── VCS dispatch (jj first, then git) ────────────────────────────────────────
 
-function buildVcsSection() {
-    return buildJjSection() ?? buildGitSection()
+async function buildVcsSection() {
+    return (await buildJjSection()) ?? buildGitSection()
 }
 
 // ─── Context window bar ───────────────────────────────────────────────────────
@@ -349,7 +360,7 @@ const termWidth =
 // ─── Assemble output ──────────────────────────────────────────────────────────
 
 const parentFolder = basename(cwd) || cwd
-const vcsSection = buildVcsSection()
+const vcsSection = await buildVcsSection()
 const ctxBar = buildContextBar(usedPct, inputTokens, outputTokens)
 const currentSessionCost = buildSessionCost(sessionCost)
 
