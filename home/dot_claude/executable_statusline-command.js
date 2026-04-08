@@ -92,14 +92,14 @@ function buildJjSection() {
     const changeId = jj("log", "-r", "@", "--no-graph", "-T", "change_id.shortest()")
     if (!changeId) return null
 
-    const bookmarks = jj("log", "-r", "@", "--no-graph", "-T", 'bookmarks.join(", ")')
+    const bookmarks = jj("log", "-r", "@", "--no-graph", "-T", 'local_bookmarks.join(", ")')
     const ancestorBookmark = jj(
         "log",
         "-r",
         "latest(ancestors(@-) & bookmarks())",
         "--no-graph",
         "-T",
-        'bookmarks.join(", ")'
+        'local_bookmarks.join(", ")'
     )
 
     let branch = changeId
@@ -108,9 +108,28 @@ function buildJjSection() {
 
     // Check if working copy has changes — this is the only call that snapshots the working copy,
     // so it takes the lock briefly but won't contend with other jj calls (all use --ignore-working-copy)
-    const diffSummary = run("jj", "-R", cwd, "--no-pager", "diff", "--summary")
-    const indicators = diffSummary ? ` ${BOLD}${RED}[!]${RESET}` : ""
+    const diffStat = run("jj", "-R", cwd, "--no-pager", "diff", "--stat")
 
+    let dirty = ""
+    let addStr = ""
+    let delStr = ""
+    let filesStr = ""
+    if (diffStat) {
+        dirty = ` ${BOLD}${RED}[!]${RESET}`
+        // Last line: "N files changed, M insertions(+), K deletions(-)"
+        const summary = diffStat.split("\n").pop() ?? ""
+        const insMatch = summary.match(/(\d+) insertion/)
+        const delMatch = summary.match(/(\d+) deletion/)
+        const filesMatch = summary.match(/(\d+) file/)
+        const ins = insMatch ? parseInt(insMatch[1], 10) : 0
+        const del = delMatch ? parseInt(delMatch[1], 10) : 0
+        const files = filesMatch ? parseInt(filesMatch[1], 10) : 0
+        if (ins > 0) addStr = ` ${BOLD}${LTGRN}+${ins}${RESET}`
+        if (del > 0) delStr = ` ${BOLD}${RED}-${del}${RESET}`
+        if (files > 0) filesStr = ` *${files}`
+    }
+
+    const indicators = dirty + addStr + delStr + filesStr
     return { branch, indicators }
 }
 

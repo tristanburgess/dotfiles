@@ -27,18 +27,54 @@ repo_root_style = "bold cyan underline"
 repo_root_format = "[$before_root_path]($before_repo_root_style)[$repo_root]($repo_root_style)[$path]($style)[$read_only]($read_only_style) "
 
 # ── Jujutsu ─────────────────────────────────────────────────────
-# Line 1: change ID, nearest ancestor bookmark, modified status
+# Line 1: change ID, nearest ancestor bookmark, diff stats (ANSI-colored)
+# Wraps to its own line if it would overflow terminal width
 [custom.jj]
-command = """id=$(jj --ignore-working-copy log -r @ --no-graph -T 'separate(" ", change_id.shortest(), bookmarks.join(" ")) ++ if(!empty, " (modified)")' 2>/dev/null); base=$(jj --ignore-working-copy log -r 'latest(ancestors(@-) & bookmarks())' --no-graph -T 'bookmarks.join(" ")' 2>/dev/null); printf '%s' "$id"; [ -n "$base" ] && printf ' on %s' "$base""""
+command = '''
+G=$'\033[38;2;31;136;61m'    # green (branch)
+BR=$'\033[1;38;2;255;80;80m' # bold red ([!], deletions)
+BG=$'\033[1;38;2;80;220;80m' # bold green (additions)
+P=$'\033[1;35m'              # bold purple (symbol)
+R=$'\033[0m'
+
+id=$(jj --ignore-working-copy log -r @ --no-graph -T 'separate(" ", change_id.shortest(), local_bookmarks.join(" "))' 2>/dev/null)
+base=$(jj --ignore-working-copy log -r 'latest(ancestors(@-) & bookmarks())' --no-graph -T 'local_bookmarks.join(" ")' 2>/dev/null)
+
+out="${P} ${R}${G}${id}${R}"
+[ -n "$base" ] && out="${out}${G} on ${base}${R}"
+
+stats=$(jj diff --stat 2>/dev/null | tail -1)
+files=$(echo "$stats" | grep -oP '\d+(?= file)'); files=${files:-0}
+if [ "$files" -gt 0 ] 2>/dev/null; then
+  ins=$(echo "$stats" | grep -oP '\d+(?= insertion)'); ins=${ins:-0}
+  del=$(echo "$stats" | grep -oP '\d+(?= deletion)'); del=${del:-0}
+  out="${out} ${BR}[!]${R}"
+  [ "$ins" -gt 0 ] && out="${out} ${BG}+${ins}${R}"
+  [ "$del" -gt 0 ] && out="${out} ${BR}-${del}${R}"
+  out="${out} *${files}"
+fi
+
+# Wrap to new line if directory + vcs info overflows terminal.
+# Starship trims command output, so prefix with a zero-width space (U+200B)
+# to prevent the leading newline from being stripped.
+cols=$(tput cols 2>/dev/null || echo "${COLUMNS:-80}")
+dir="${PWD/#$HOME/\~}"
+visible=${#id}
+[ -n "$base" ] && visible=$((visible + ${#base} + 4))  # " on "
+[ "$files" -gt 0 ] 2>/dev/null && visible=$((visible + ${#ins} + ${#del} + ${#files} + 10))
+if [ $((${#dir} + visible + 6)) -gt "$cols" ]; then
+  printf '\xe2\x80\x8b\n%s' "$out"
+else
+  printf '%s' "$out"
+fi
+'''
 detect_folders = [".jj"]
 ignore_timeout = true
-style = "bold purple"
-symbol = " "
-format = "[$symbol$output]($style) "
+format = "($output )"
 
 # Line 2: change description
 [custom.jj_desc]
-command = """jj --ignore-working-copy log -r @ --no-graph -T 'if(description, description.first_line().substr(0, 120), "(no description set, use `jj describe`)")' 2>/dev/null"""
+command = '''jj --ignore-working-copy log -r @ --no-graph -T 'if(description, description.first_line().substr(0, 120), "(no description set, use `jj describe`)")' 2>/dev/null'''
 detect_folders = [".jj"]
 ignore_timeout = true
 style = "italic 248"
@@ -46,7 +82,26 @@ format = "[$output]($style)\n"
 
 # ── Git (non-jj repos only) ────────────────────────────────────
 [custom.git]
-command = """jj root >/dev/null 2>&1 && exit 0; branch=$(git branch --show-current 2>/dev/null); [ -z "$branch" ] && branch=$(git rev-parse --short HEAD 2>/dev/null); printf ' %s' "$branch"; git diff --quiet HEAD 2>/dev/null || printf ' (modified)'; true"""
+command = '''
+jj root >/dev/null 2>&1 && exit 0
+branch=$(git branch --show-current 2>/dev/null)
+[ -z "$branch" ] && branch=$(git rev-parse --short HEAD 2>/dev/null)
+printf ' %s' "$branch"
+stats=$(git diff --numstat HEAD 2>/dev/null)
+if [ -n "$stats" ]; then
+  ins=0; del=0; files=0
+  while IFS=$'\t' read -r a d _; do
+    [ "$a" != "-" ] && ins=$((ins + a))
+    [ "$d" != "-" ] && del=$((del + d))
+    files=$((files + 1))
+  done <<< "$stats"
+  printf ' [!]'
+  [ "$ins" -gt 0 ] && printf ' +%s' "$ins"
+  [ "$del" -gt 0 ] && printf ' -%s' "$del"
+  [ "$files" -gt 0 ] && printf ' *%s' "$files"
+fi
+true
+'''
 detect_folders = [".git"]
 style = "bold purple"
 format = "([$output]($style) )"
