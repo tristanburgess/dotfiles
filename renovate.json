@@ -13,6 +13,16 @@
       "matchStrings": [
         "# renovate: packageName=(?<packageName>[^\\s]+) datasource=(?<datasource>[^\\s]+)\\n[\\w-]+ = \"(?<currentValue>[^\"]+)\""
       ]
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/home/\\.chezmoiscripts/run_onchange_after_04-claude-desktop\\.sh$/"
+      ],
+      "matchStrings": [
+        "# renovate: packageName=(?<packageName>[^\\s]+) datasource=(?<datasource>[^\\s]+)\\nCLAUDE_DESKTOP_VERSION=\"(?<currentValue>[^\"]+)\""
+      ],
+      "versioningTemplate": "loose"
     }
   ],
   "packageRules": [
