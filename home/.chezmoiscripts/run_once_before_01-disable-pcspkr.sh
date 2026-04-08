@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+
+# Blacklist the PC speaker kernel module to prevent hardware beeps
+# (e.g. terminal BEL characters triggering a loud buzzer)
+if [ ! -f /etc/modprobe.d/nobeep.conf ]; then
+    echo "blacklist pcspkr" | sudo tee /etc/modprobe.d/nobeep.conf >/dev/null
+fi
+
+# Unload immediately if currently loaded
+if lsmod | grep -q pcspkr; then
+    sudo rmmod pcspkr
+fi
