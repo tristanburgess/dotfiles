@@ -1,0 +1,27 @@
+#!/bin/bash
+set -euo pipefail
+
+# Register Super+Shift+D as a global shortcut for toggling Do Not Disturb
+# Cinnamon custom-list expects short names (e.g. "dnd-toggle"), NOT full dconf paths.
+# The keybinding data lives at the full dconf path but the list references just the name.
+SHORTCUT_NAME="dnd-toggle"
+SHORTCUT_PATH="/org/cinnamon/desktop/keybindings/custom-keybindings/${SHORTCUT_NAME}/"
+SCHEMA="org.cinnamon.desktop.keybindings.custom-keybinding"
+
+# Get the current list of custom shortcuts
+current=$(gsettings get org.cinnamon.desktop.keybindings custom-list)
+
+# Add our name if not already present
+if [[ "$current" != *"'$SHORTCUT_NAME'"* ]]; then
+    if [ "$current" = "@as []" ]; then
+        new="['$SHORTCUT_NAME']"
+    else
+        new="${current%]*}, '$SHORTCUT_NAME']"
+    fi
+    gsettings set org.cinnamon.desktop.keybindings custom-list "$new"
+fi
+
+# Set the shortcut properties
+gsettings set "$SCHEMA:$SHORTCUT_PATH" name "Toggle Do Not Disturb"
+gsettings set "$SCHEMA:$SHORTCUT_PATH" command "$HOME/bin/toggle-dnd.sh"
+gsettings set "$SCHEMA:$SHORTCUT_PATH" binding "['<Super><Shift>d']"

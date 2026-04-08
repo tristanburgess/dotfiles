@@ -161,6 +161,3 @@ else
     disown
 fi
 
-# Play notification sound
-paplay /usr/share/sounds/freedesktop/stereo/complete.oga &
-disown
