@@ -15,19 +15,70 @@ MANAGED='
   "permissions": {
     "allow": [
       "Read",
+      "Bash(bun*)",
+      "Bash(cat*)",
+      "Bash(chezmoi diff*)",
+      "Bash(chezmoi status*)",
+      "Bash(eslint*)",
+      "Bash(find*)",
       "Bash(gh api*)",
       "Bash(gh pr*)",
-      "Bash(jj*)",
-      "Bash(go vet*)",
+      "Bash(go build*)",
       "Bash(go doc*)",
       "Bash(go env*)",
-      "Bash(find*)",
+      "Bash(go run*)",
+      "Bash(go test*)",
+      "Bash(go vet*)",
       "Bash(grep*)",
-      "Bash(sed*)"
+      "Bash(jj*)",
+      "Bash(ls*)",
+      "Bash(make *)",
+      "Bash(make)",
+      "Bash(mise*)",
+      "Bash(mypy*)",
+      "Bash(node*)",
+      "Bash(npm list*)",
+      "Bash(npm outdated*)",
+      "Bash(npm run*)",
+      "Bash(npm test*)",
+      "Bash(npx*)",
+      "Bash(pip freeze*)",
+      "Bash(pip list*)",
+      "Bash(pip show*)",
+      "Bash(pytest*)",
+      "Bash(python*)",
+      "Bash(ruff check*)",
+      "Bash(ruff format*)",
+      "Bash(sed*)",
+      "Bash(tsc*)",
+      "Bash(which*)"
+    ],
+    "deny": [
+      "Read(/home/tristan/.ssh/**)",
+      "Read(/home/tristan/.aws/**)",
+      "Read(**/.env*)",
+      "Read(**/credentials*)",
+      "Edit(/home/tristan/.ssh/**)",
+      "Edit(/home/tristan/.aws/**)",
+      "Edit(**/.env*)",
+      "Write(/home/tristan/.ssh/**)",
+      "Write(/home/tristan/.aws/**)",
+      "Write(**/.env*)",
+      "Bash(curl*|*bash*)",
+      "Bash(ssh *)",
+      "Bash(nc *)",
+      "Bash(scp *)",
+      "Bash(rm -rf /)",
+      "Bash(chmod 777*)",
+      "Bash(*--force*push*)",
+      "Bash(*--no-verify*)"
     ]
   },
   "model": "opus[1m]",
   "effortLevel": "high",
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": "haiku"
+  },
   "statusLine": {
     "type": "command",
     "command": "bun ~/.claude/statusline-command.js"
@@ -36,6 +87,37 @@ MANAGED='
     "gopls-lsp@claude-plugins-official": true
   },
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/config-protection.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/block-no-verify.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/bash-audit-log.sh"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [
@@ -52,6 +134,10 @@ MANAGED='
           {
             "type": "command",
             "command": "$HOME/.claude/notify.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/verify-nudge.sh"
           }
         ]
       }

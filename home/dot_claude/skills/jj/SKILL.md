@@ -62,3 +62,12 @@ Rewriting (squash, edit, rebase) changes the git hash -> force-push. Since repos
 ```bash
 gh pr create --head <bookmark-name> --base main --title "..." --body "..."
 ```
+
+## Gotchas
+
+- **Forgetting `jj git push` after `jj bookmark set`** — the bookmark moves locally but GitHub doesn't see it. Always push after setting/moving a bookmark.
+- **Using `jj squash` on already-pushed changes** — this rewrites history and forces a push. Only squash unpushed changes.
+- **`gh pr create` without `--head`** — `jj` doesn't check out git branches, so `gh` can't infer the head branch. Always pass `--head <bookmark-name>`.
+- **Forgetting `jj bookmark track <name>@origin`** — if a remote bookmark exists but isn't tracked locally, `jj bookmark set` creates a divergent bookmark instead of moving the existing one.
+- **Running `jj git push` with no bookmark on `@`** — nothing gets pushed silently. Verify a bookmark points at `@` first with `jj log -r @`.
+- **Using `git` commands directly** — jj's git repo state can desync. Stick to `jj git *` subcommands for all git operations.
