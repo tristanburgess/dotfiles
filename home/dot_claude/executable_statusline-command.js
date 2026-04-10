@@ -3,7 +3,7 @@
 // Adapted from https://github.com/andrewburgess/dotfiles
 
 import { spawnSync } from "bun"
-import { readFileSync, writeFileSync } from "fs"
+import { readFileSync, writeFileSync, openSync, closeSync, unlinkSync, statSync } from "fs"
 import { basename } from "path"
 
 // ─── ANSI helpers ────────────────────────────────────────────────────────────
@@ -104,7 +104,7 @@ async function buildJjSection() {
         runAsync("jj", "--ignore-working-copy", "-R", cwd, "--no-pager",
             "log", "-r", "latest(ancestors(@-) & bookmarks())", "--no-graph", "-T",
             'local_bookmarks.join(", ")'),
-        runAsync("jj", "-R", cwd, "--no-pager", "diff", "--stat"),
+        runAsync("jj", "--ignore-working-copy", "-R", cwd, "--no-pager", "diff", "--stat"),
     ])
 
     if (!atOut) return null
@@ -298,29 +298,63 @@ function buildRateIcons(fivePct, sevenPct) {
 
 const MONTHLY_BUDGET = 1000
 const BUDGET_FILE = `${process.env.HOME}/.claude/budget-tracker.json`
+const BUDGET_LOCK = `${BUDGET_FILE}.lock`
+const LOCK_STALE_MS = 2000
+const LOCK_TIMEOUT_MS = 3000
+
+function acquireLock() {
+    const deadline = Date.now() + LOCK_TIMEOUT_MS
+    while (Date.now() < deadline) {
+        try {
+            return openSync(BUDGET_LOCK, "wx")
+        } catch {
+            try {
+                if (Date.now() - statSync(BUDGET_LOCK).mtimeMs > LOCK_STALE_MS) {
+                    unlinkSync(BUDGET_LOCK)
+                    continue
+                }
+            } catch {}
+            Bun.sleepSync(10)
+        }
+    }
+    return null
+}
+
+function releaseLock(fd) {
+    try { closeSync(fd) } catch {}
+    try { unlinkSync(BUDGET_LOCK) } catch {}
+}
 
 function buildBudgetIndicator(sessionCost, sessionId) {
     if (sessionCost === null) return null
 
     const currentMonth = new Date().toISOString().slice(0, 7)
-
-    let budget
-    try {
-        budget = JSON.parse(readFileSync(BUDGET_FILE, "utf8"))
-        if (budget.month !== currentMonth) throw new Error("new month")
-    } catch {
-        budget = { month: currentMonth, sessions: {}, total_spent: 0 }
+    const lockFd = acquireLock()
+    if (lockFd === null) {
+        return `${BOLD}${RED}budget lock timeout${RESET}`
     }
 
-    const lastCost = budget.sessions[sessionId] ?? 0
-    let delta = sessionCost - lastCost
-    if (delta < 0) delta = sessionCost
-    budget.sessions[sessionId] = sessionCost
-    budget.total_spent = (budget.total_spent ?? 0) + delta
+    let spent
+    try {
+        let budget
+        try {
+            budget = JSON.parse(readFileSync(BUDGET_FILE, "utf8"))
+            if (budget.month !== currentMonth) throw new Error("new month")
+        } catch {
+            budget = { month: currentMonth, sessions: {}, total_spent: 0 }
+        }
 
-    writeFileSync(BUDGET_FILE, JSON.stringify(budget))
+        const lastCost = budget.sessions[sessionId] ?? 0
+        let delta = sessionCost - lastCost
+        if (delta < 0) delta = sessionCost
+        budget.sessions[sessionId] = sessionCost
+        budget.total_spent = (budget.total_spent ?? 0) + delta
+        spent = budget.total_spent
 
-    const spent = budget.total_spent
+        writeFileSync(BUDGET_FILE, JSON.stringify(budget))
+    } finally {
+        releaseLock(lockFd)
+    }
     const remaining = Math.max(0, MONTHLY_BUDGET - spent)
     const spentPct = Math.min(100, (spent * 100) / MONTHLY_BUDGET)
     const remainPct = 100 - spentPct
