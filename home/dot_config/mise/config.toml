@@ -1,5 +1,5 @@
 [tools]
-bun = "1.3.11"
+bun = "1.3.12"
 # renovate: packageName=twpayne/chezmoi datasource=github-releases
 chezmoi = "2.70.1"
 # renovate: packageName=@anthropic-ai/claude-code datasource=npm
