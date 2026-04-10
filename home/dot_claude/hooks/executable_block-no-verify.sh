@@ -13,8 +13,18 @@ TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')
 CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 [ -z "$CMD" ] && exit 0
 
-if echo "$CMD" | grep -qE -- '--no-verify|--no-gpg-sign'; then
-  echo "Blocked: --no-verify and --no-gpg-sign bypass security hooks. Fix the underlying issue instead."
+# Extract just the first line / actual command, ignoring heredoc body content.
+# Commands like `gh pr create --body "$(cat <<'EOF' ... --no-verify ... EOF)"`
+# should not be blocked — only actual git/jj flags matter.
+FIRST_LINE=$(echo "$CMD" | head -1)
+
+if echo "$FIRST_LINE" | grep -qE '(git|jj)\b.*--no-verify'; then
+  echo "Blocked: --no-verify bypasses security hooks. Fix the underlying issue instead."
+  exit 2
+fi
+
+if echo "$FIRST_LINE" | grep -qE '(git|jj)\b.*--no-gpg-sign'; then
+  echo "Blocked: --no-gpg-sign bypasses commit signing. Fix the underlying issue instead."
   exit 2
 fi
 
