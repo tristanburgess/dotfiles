@@ -84,7 +84,16 @@ MANAGED='
     "command": "bun ~/.claude/statusline-command.js"
   },
   "enabledPlugins": {
-    "gopls-lsp@claude-plugins-official": true
+    "gopls-lsp@claude-plugins-official": true,
+    "caveman@caveman": true
+  },
+  "extraKnownMarketplaces": {
+    "caveman": {
+      "source": {
+        "source": "github",
+        "repo": "tristanburgess/caveman"
+      }
+    }
   },
   "hooks": {
     "PreToolUse": [
