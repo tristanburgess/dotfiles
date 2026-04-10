@@ -71,3 +71,4 @@ gh pr create --head <bookmark-name> --base main --title "..." --body "..."
 - **Forgetting `jj bookmark track <name>@origin`** — if a remote bookmark exists but isn't tracked locally, `jj bookmark set` creates a divergent bookmark instead of moving the existing one.
 - **Running `jj git push` with no bookmark on `@`** — nothing gets pushed silently. Verify a bookmark points at `@` first with `jj log -r @`.
 - **Using `git` commands directly** — jj's git repo state can desync. Stick to `jj git *` subcommands for all git operations.
+- **`jj squash` into an immutable (pushed) commit** — fails because pushed commits are immutable. Add a new commit on top instead, move the bookmark, and push.
