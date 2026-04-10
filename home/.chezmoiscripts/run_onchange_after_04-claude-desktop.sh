@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # renovate: packageName=aaddrick/claude-desktop-debian datasource=github-releases
-CLAUDE_DESKTOP_VERSION="1.3.27+claude1.1062.0"
+CLAUDE_DESKTOP_VERSION="1.3.27+claude1.1348.0"
 
 ARCH=$(dpkg --print-architecture)
 
