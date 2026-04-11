@@ -23,20 +23,32 @@ rule (security warnings, irreversible action confirmations, ambiguous multi-step
 
 ### Composition Process
 
-Compress first, then layer voice. Never the reverse.
+Compress first, then layer voice. Never the reverse. **These are sequential drafts,
+not simultaneous intentions.** When both passes happen in one generation pass, register
+voice dominates and caveman constraints silently drop. The caveman draft must exist as
+a concrete intermediate artifact in your reasoning before the register pass begins.
 
-1. **Write at caveman level first.** Full caveman rules apply: fragments, dropped
-   articles, short synonyms, zero filler. Draft should read as pure caveman output
-   for target format.
+1. **Draft at caveman level first (in reasoning/scratchpad).** Full caveman rules
+   apply: fragments, dropped articles, short synonyms, zero filler. Write the complete
+   piece at this level. It should read as pure caveman output for target format. If
+   the draft has articles, full grammatical sentences where fragments carry same info,
+   or hedging phrases, it's not caveman yet.
 
-2. **Layer register voice second.** Apply register's tone, rhetoric, and structural
-   moves (mechanism-first persuasion, mid-sentence parentheticals, peer-to-peer tone,
-   etc.) WITHOUT re-inflating density. Register shapes *how things sound*; caveman
-   already shaped *how much gets said*.
+2. **Transform the caveman draft with register voice.** Starting from the caveman
+   draft (not from scratch), apply register's tone, rhetoric, and structural moves
+   (mechanism-first persuasion, mid-sentence parentheticals, peer-to-peer tone, etc.).
+   Add bold emphasis, rhetorical devices, mechanical verbs. **Do not add words that
+   carry no new meaning.** Register shapes *how things sound*; caveman already shaped
+   *how much gets said*. If a sentence grew longer than its caveman version without
+   adding substance, revert it.
 
-3. **Verify density held.** Re-read final output. If any sentence could lose an
-   article, filler word, or clause without changing meaning, cut it. Caveman level
-   sets density ceiling; register voice operates within that ceiling.
+3. **Verify density held.** Compare final output against caveman draft. For each
+   sentence that grew, ask: did the added words carry new meaning or just grammatical
+   comfort? Specific checks:
+   - Articles (a/an/the): should still be mostly absent at full level
+   - Hedging (would, could, might): only where genuine uncertainty exists
+   - Filler transitions ("This works well for", "worth noting that"): cut
+   - Full sentences where fragments carried same info: revert to fragment
 
 ### The Spectrum
 
