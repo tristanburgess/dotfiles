@@ -8,15 +8,6 @@
     {
       "customType": "regex",
       "managerFilePatterns": [
-        "/home/dot_config/mise/config\\.toml$/"
-      ],
-      "matchStrings": [
-        "# renovate: packageName=(?<packageName>[^\\s]+) datasource=(?<datasource>[^\\s]+)\\n[\\w-]+ = \"(?<currentValue>[^\"]+)\""
-      ]
-    },
-    {
-      "customType": "regex",
-      "managerFilePatterns": [
         "/home/\\.chezmoiscripts/run_onchange_after_04-claude-desktop\\.sh$/"
       ],
       "matchStrings": [

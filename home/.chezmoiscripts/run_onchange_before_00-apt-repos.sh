@@ -74,6 +74,13 @@ add_repo "onedrive" \
     "https://download.opensuse.org/repositories/home:/npreining:/debian-ubuntu-onedrive/xUbuntu_24.04/Release.key" \
     "deb [arch=amd64 signed-by=/usr/share/keyrings/obs-onedrive.gpg] https://download.opensuse.org/repositories/home:/npreining:/debian-ubuntu-onedrive/xUbuntu_24.04/ ./"
 
+# --- KeePassXC PPA ---
+if [[ ! -f /etc/apt/sources.list.d/phoerious-keepassxc-noble.list ]] && \
+   ! find /etc/apt/sources.list.d/ -name '*keepassxc*' -print -quit 2>/dev/null | grep -q .; then
+    printf "Adding PPA: phoerious/keepassxc\n"
+    sudo add-apt-repository -y ppa:phoerious/keepassxc
+fi
+
 # --- OpenShot PPA ---
 if [[ ! -f /etc/apt/sources.list.d/openshot_developers-ppa-noble.list ]] && \
    ! find /etc/apt/sources.list.d/ -name '*openshot*' -print -quit 2>/dev/null | grep -q .; then

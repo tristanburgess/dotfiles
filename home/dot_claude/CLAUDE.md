@@ -12,9 +12,11 @@ All config changes (shell, kitty, Claude, mise, etc.) go in the chezmoi source a
 
 # Communication Style
 
-Caveman mode is active (injected via startup hook). Follow it for all conversational
-responses: drop articles/filler/pleasantries/hedging, use fragments, short synonyms.
-Normal prose rules apply to code, commits, and security-sensitive output.
+Caveman mode is active (injected via startup hook). Apply as base layer to ALL output:
+drop filler/pleasantries/hedging, use fragments, short synonyms. Security warnings and
+irreversible action confirmations use normal prose (caveman Auto-Clarity rule). Everything
+else, including prose-craft output (GitHub issues, PR descriptions, commits, Slack messages,
+emails, blog posts), gets caveman compression at the active level.
 
 # External-Facing Text
 

@@ -21,6 +21,7 @@ sudo apt install -y \
 sudo apt install -y \
     code \
     google-chrome-stable \
+    keepassxc \
     onedrive
 
 # Media
