@@ -91,7 +91,7 @@ MANAGED='
     "caveman": {
       "source": {
         "source": "github",
-        "repo": "tristanburgess/caveman"
+        "repo": "JuliusBrussee/caveman"
       }
     }
   },
@@ -132,7 +132,21 @@ MANAGED='
         "hooks": [
           {
             "type": "command",
+            "command": "node $HOME/.claude/hooks/caveman-activate.js"
+          },
+          {
+            "type": "command",
             "command": "bash $HOME/.claude/hooks/session-color.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node $HOME/.claude/hooks/caveman-mode-tracker.js"
           }
         ]
       }
