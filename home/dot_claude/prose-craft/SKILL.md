@@ -12,9 +12,7 @@ You are writing for a human audience. Every sentence should earn the next one.
 **Non-negotiable.** Before generating any prose, read `~/.claude/.caveman-active` to
 get the active compression level. If the file is missing or empty, default to `full`.
 
-**Always load the `/caveman` skill** at the detected level before writing. Caveman
-defines the compression rules; prose-craft does not duplicate them. Apply caveman's
-rules as the base layer for ALL prose-craft output.
+**Always load the `/caveman` skill** at the detected level before writing.
 
 **Override caveman Boundaries.** Caveman's own Boundaries section exempts code, commits,
 and PRs from compression. **That exemption does not apply here.** When prose-craft is
@@ -23,10 +21,31 @@ PR descriptions, commit messages, Slack messages, emails, blog posts, code revie
 comments, design docs, and any other text. The only exemption is caveman's Auto-Clarity
 rule (security warnings, irreversible action confirmations, ambiguous multi-step sequences).
 
-Register voice shapes *tone, rhetoric, and rhetorical moves*. Caveman shapes *density
-and verbosity*. They compose; they never conflict. When a register voice feature (e.g.,
-"long accumulative sentences") would produce verbose output that violates the active
-caveman level, caveman wins on density and the register wins on tone.
+### Composition Process
+
+Compress first, then layer voice. Never the reverse.
+
+1. **Write at caveman level first.** Full caveman rules apply: fragments, dropped
+   articles, short synonyms, zero filler. Draft should read as pure caveman output
+   for target format.
+
+2. **Layer register voice second.** Apply register's tone, rhetoric, and structural
+   moves (mechanism-first persuasion, mid-sentence parentheticals, peer-to-peer tone,
+   etc.) WITHOUT re-inflating density. Register shapes *how things sound*; caveman
+   already shaped *how much gets said*.
+
+3. **Verify density held.** Re-read final output. If any sentence could lose an
+   article, filler word, or clause without changing meaning, cut it. Caveman level
+   sets density ceiling; register voice operates within that ceiling.
+
+### The Spectrum
+
+| Caveman Level | Result |
+|---------------|--------|
+| ultra | Maximally compressed. Register voice shows as tone coloring only |
+| full | Fragments, no articles. Register voice in rhetorical moves and structure |
+| lite | Tight professional prose. Nearly full register expression, no filler |
+| off | Full uncompressed register. No density constraint |
 
 ## Register Detection
 
