@@ -28,11 +28,11 @@ not simultaneous intentions.** When both passes happen in one generation pass, r
 voice dominates and caveman constraints silently drop. The caveman draft must exist as
 a concrete intermediate artifact in your reasoning before the register pass begins.
 
-1. **Draft at caveman level first (in reasoning/scratchpad).** Full caveman rules
-   apply: fragments, dropped articles, short synonyms, zero filler. Write the complete
-   piece at this level. It should read as pure caveman output for target format. If
-   the draft has articles, full grammatical sentences where fragments carry same info,
-   or hedging phrases, it's not caveman yet.
+1. **Draft at caveman level first. Output this draft visibly, labeled `[CAVEMAN DRAFT]`,
+   before proceeding to step 2.** Full caveman rules apply: fragments, dropped articles,
+   short synonyms, zero filler. Write the complete piece at this level. It should read
+   as pure caveman output for target format. If the draft has articles, full grammatical
+   sentences where fragments carry same info, or hedging phrases, it's not caveman yet.
 
 2. **Transform the caveman draft with register voice.** Starting from the caveman
    draft (not from scratch), apply register's tone, rhetoric, and structural moves
