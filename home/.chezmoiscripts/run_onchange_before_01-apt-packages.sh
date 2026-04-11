@@ -1,9 +1,28 @@
 #!/bin/bash
 set -euo pipefail
 
-# System packages needed by other tools
+# All user-installed apt packages — re-runs when this list changes
 sudo apt update -qq
+
+# Base system tools
 sudo apt install -y \
     curl wget git build-essential pkg-config libssl-dev \
+    software-properties-common apt-transport-https \
     wmctrl xprintidle keychain libnotify-bin \
-    python3 python3-pip python3-venv fontconfig unzip
+    python3 python3-pip python3-venv fontconfig unzip \
+    htop httpie imagemagick mysql-client socat vim xclip zram-tools
+
+# Docker
+sudo apt install -y \
+    docker-ce docker-ce-cli containerd.io \
+    docker-buildx-plugin docker-compose-plugin
+
+# Desktop apps and daemons (from custom repos)
+sudo apt install -y \
+    code \
+    google-chrome-stable \
+    onedrive
+
+# Media
+sudo apt install -y \
+    openshot-qt
