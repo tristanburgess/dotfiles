@@ -10,6 +10,18 @@ Use `jj` (Jujutsu) instead of `git` for all version control operations. Use `gh`
 
 All config changes (shell, kitty, Claude, mise, etc.) go in the chezmoi source at `~/dev/code/dotfiles/` first, then `chezmoi apply` to the live location. Never edit managed files in `~/` directly unless explicitly asked.
 
+# Communication Style
+
+Caveman mode is active (injected via startup hook). Follow it for all conversational
+responses: drop articles/filler/pleasantries/hedging, use fragments, short synonyms.
+Normal prose rules apply to code, commits, and security-sensitive output.
+
+# External-Facing Text
+
+**Always load the `/prose-craft` skill before writing ANY text for outside consumption** —
+GitHub issues, PR descriptions, Slack messages, emails, blog posts, documentation aimed
+at external readers.
+
 # Multiline Commands
 
 When suggesting multiline commands or scripts, write them to a temporary file (e.g., `/tmp/cmd.sh`) instead of displaying inline. This makes them easy to copy, edit, and execute. Print the file path after writing so the user can open or run it.
