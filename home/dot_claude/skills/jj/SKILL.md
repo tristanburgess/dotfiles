@@ -30,7 +30,7 @@ Use `jj` instead of `git` for all version control operations. Use `gh` for GitHu
 | `rev::` | All descendants of `rev` |
 | `trunk()` | Main/master branch |
 | `mutable()` | Non-immutable commits |
-| `stack()` | Current stack of mutable changes |
+| `trunk()..@` | Changes on current stack since trunk (used by default `jj log`) |
 
 ## Golden rule: never rewrite already-pushed commits
 
@@ -46,6 +46,18 @@ Rewriting (squash, edit, rebase) changes the git hash -> force-push. Since repos
 | `jj abandon` | Remove changes from history (defaults to `@`) |
 | `jj restore --from <rev> <path>` | Restore a file from a previous change |
 | `jj absorb` | Auto-distribute hunks in `@` into the ancestor that last touched those lines |
+
+## Pushing changes
+
+**Always fetch before push.** jj caches the last-seen position of each remote bookmark. If the remote moved since your last fetch (CI merges, other contributors, Renovate PRs), push fails with "references unexpectedly moved on the remote." The fix is simple — make fetch-then-push a single habit:
+
+```bash
+jj git fetch
+# resolve any conflicts if needed
+jj git push --bookmark <name>
+```
+
+If push fails with stale refs, run `jj git fetch`, rebase onto the new remote tip if needed (`jj rebase -d main@origin`), then push again.
 
 ## GitHub PR workflow
 
@@ -72,3 +84,4 @@ gh pr create --head <bookmark-name> --base main --title "..." --body "..."
 - **Running `jj git push` with no bookmark on `@`** — nothing gets pushed silently. Verify a bookmark points at `@` first with `jj log -r @`.
 - **Using `git` commands directly** — jj's git repo state can desync. Stick to `jj git *` subcommands for all git operations.
 - **`jj squash` into an immutable (pushed) commit** — fails because pushed commits are immutable. Add a new commit on top instead, move the bookmark, and push.
+- **Pushing without fetching first** — jj caches remote bookmark positions; if the remote moved since last fetch, push fails with "references unexpectedly moved." Always `jj git fetch` before `jj git push`.
