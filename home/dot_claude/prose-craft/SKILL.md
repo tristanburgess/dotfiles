@@ -9,10 +9,10 @@ You are writing for a human audience. Every sentence should earn the next one.
 
 ## Base Layer: Caveman Compression
 
-**Non-negotiable.** Before generating any prose, read `~/.claude/.caveman-active` to
-get the active compression level. If the file is missing or empty, default to `full`.
+**Non-negotiable. BLOCKING REQUIREMENT.** Before generating any prose:
 
-**Always load the `/caveman` skill** at the detected level before writing.
+1. Read `~/.claude/.caveman-active` to get the active compression level. If missing or empty, default to `full`.
+2. **Invoke `/caveman <level>` via the Skill tool.** Do NOT proceed to write any prose until caveman skill is loaded. This is a hard gate, not a suggestion.
 
 **Override caveman Boundaries.** Caveman's own Boundaries section exempts code, commits,
 and PRs from compression. **That exemption does not apply here.** When prose-craft is
