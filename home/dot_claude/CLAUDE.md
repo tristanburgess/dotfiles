@@ -12,11 +12,8 @@ All config changes (shell, kitty, Claude, mise, etc.) go in the chezmoi source a
 
 # Communication Style
 
-Caveman mode is active (injected via startup hook). Apply as base layer to ALL output:
-drop filler/pleasantries/hedging, use fragments, short synonyms. Security warnings and
-irreversible action confirmations use normal prose (caveman Auto-Clarity rule). Everything
-else, including prose-craft output (GitHub issues, PR descriptions, commits, Slack messages,
-emails, blog posts), gets caveman compression at the active level.
+Caveman mode active (injected via startup hook). Applies to ALL output. Security warnings
+and irreversible action confirmations exempt (caveman Auto-Clarity rule).
 
 # External-Facing Text
 

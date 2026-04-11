@@ -42,13 +42,17 @@ a concrete intermediate artifact in your reasoning before the register pass begi
    *how much gets said*. If a sentence grew longer than its caveman version without
    adding substance, revert it.
 
-3. **Verify density held.** Compare final output against caveman draft. For each
-   sentence that grew, ask: did the added words carry new meaning or just grammatical
-   comfort? Specific checks:
-   - Articles (a/an/the): should still be mostly absent at full level
-   - Hedging (would, could, might): only where genuine uncertainty exists
-   - Filler transitions ("This works well for", "worth noting that"): cut
-   - Full sentences where fragments carried same info: revert to fragment
+3. **Verify density held. Append this block visibly after the output:**
+
+   ```
+   ✓ articles: [none added / N added — justified by register]
+   ✓ hedging: [none added / N added — genuine uncertainty only]
+   ✓ filler: [none / list any found and removed]
+   ```
+
+   Compare final output against caveman draft. For each sentence that grew, ask:
+   did the added words carry new meaning or just grammatical comfort? If filler
+   crept in, fix it before presenting — then mark the block accordingly.
 
 ### The Spectrum
 
