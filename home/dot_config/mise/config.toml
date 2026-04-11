@@ -1,6 +1,6 @@
 [tools]
 # renovate: packageName=aws/aws-cli datasource=github-releases
-awscli = "2.32.25"
+awscli = "2.34.29"
 # renovate: packageName=azure-cli datasource=pypi
 azure-cli = "2.85.0"
 # renovate: bun
