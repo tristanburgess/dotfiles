@@ -1,5 +1,9 @@
+{{- if .isLinuxBaremetal -}}
 #!/bin/bash
 set -euo pipefail
+
+# Bare-metal Linux only — on Windows we use the native Claude Desktop installer,
+# on WSL there's no benefit to a Linux desktop app.
 
 # renovate: packageName=aaddrick/claude-desktop-debian datasource=github-releases
 CLAUDE_DESKTOP_VERSION="1.3.27+claude1.1617.0"
@@ -27,3 +31,4 @@ fi
 sudo dpkg -i "${DEB_FILE}" || sudo apt-get install -f -y
 
 echo "claude-desktop ${CLAUDE_DESKTOP_VERSION} installed successfully"
+{{- end -}}

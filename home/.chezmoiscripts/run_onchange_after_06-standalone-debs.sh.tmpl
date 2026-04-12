@@ -1,8 +1,10 @@
+{{- if .isLinuxBaremetal -}}
 #!/bin/bash
 set -euo pipefail
 
-# Standalone .deb installs — no apt repos available
-# No version pinning needed: these apps auto-update themselves once installed
+# Standalone .deb installs — no apt repos available.
+# Bare-metal Linux only — on Windows/WSL use the native Discord/Zoom installers.
+# No version pinning needed: these apps auto-update themselves once installed.
 # Re-runs when this script changes
 
 TMPDIR=$(mktemp -d)
@@ -24,3 +26,4 @@ if ! dpkg -s zoom &>/dev/null; then
 fi
 
 printf "All standalone .deb installs complete.\n"
+{{- end -}}

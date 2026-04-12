@@ -1,3 +1,4 @@
+{{- if eq .chezmoi.os "linux" -}}
 #!/bin/bash
 set -euo pipefail
 
@@ -26,3 +27,4 @@ fi
 if [ "$NEED_CACHE" = true ]; then
     fc-cache -f
 fi
+{{- end -}}

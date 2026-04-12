@@ -1,14 +1,15 @@
+{{- if ne .chezmoi.os "darwin" -}}
 #!/bin/bash
 set -euo pipefail
 
 # --- Registers: extract from tarball if present ---
-TARBALL="/tmp/prose-craft-registers.tar.zst"
+TARBALL="/tmp/prose-craft-registers.tar.gz"
 TARGET="$HOME/.claude/prose-craft-registers"
 
 if [[ -f "$TARBALL" ]]; then
     printf "Extracting prose-craft registers from %s...\n" "$TARBALL"
     mkdir -p "$TARGET"
-    tar --zstd -xf "$TARBALL" -C "$TARGET"
+    tar -xzf "$TARBALL" -C "$TARGET"
     printf "Prose-craft registers extracted to %s\n" "$TARGET"
 fi
 
@@ -33,3 +34,4 @@ for cache_skill in "$HOME"/.claude/plugins/cache/prose-craft/prose-craft/*/skill
         printf "Synced SKILL.md to cache: %s\n" "$cache_skill"
     fi
 done
+{{- end -}}

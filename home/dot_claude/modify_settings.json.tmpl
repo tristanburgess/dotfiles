@@ -1,3 +1,6 @@
+{{- /* Normalize home dir to forward slashes — Windows uses backslashes
+       which would be invalid inside JSON strings if not escaped. */ -}}
+{{- $home := replace "\\" "/" .chezmoi.homeDir -}}
 #!/bin/bash
 # Merge chezmoi-managed keys into the live settings.json, preserving
 # any runtime additions (plugins, marketplaces, etc.) that Claude Code
@@ -5,6 +8,14 @@
 #
 # chezmoi pipes the current target file contents to stdin.
 # We output the merged result to stdout.
+
+# Statusline path differs by OS — `~` expansion is unreliable on Windows
+# because Claude Code launches the command in its own shell, not Git Bash.
+{{- if eq .chezmoi.os "windows" }}
+STATUSLINE_CMD='bun "{{ $home }}/.claude/statusline-command.js"'
+{{- else }}
+STATUSLINE_CMD='bun ~/.claude/statusline-command.js'
+{{- end }}
 
 MANAGED='
 {
@@ -54,15 +65,15 @@ MANAGED='
       "Bash(which*)"
     ],
     "deny": [
-      "Read(/home/tristan/.ssh/**)",
-      "Read(/home/tristan/.aws/**)",
+      "Read({{ $home }}/.ssh/**)",
+      "Read({{ $home }}/.aws/**)",
       "Read(**/.env*)",
       "Read(**/credentials*)",
-      "Edit(/home/tristan/.ssh/**)",
-      "Edit(/home/tristan/.aws/**)",
+      "Edit({{ $home }}/.ssh/**)",
+      "Edit({{ $home }}/.aws/**)",
       "Edit(**/.env*)",
-      "Write(/home/tristan/.ssh/**)",
-      "Write(/home/tristan/.aws/**)",
+      "Write({{ $home }}/.ssh/**)",
+      "Write({{ $home }}/.aws/**)",
       "Write(**/.env*)",
       "Bash(curl*|*bash*)",
       "Bash(ssh *)",
@@ -76,12 +87,14 @@ MANAGED='
   },
   "model": "opus[1m]",
   "effortLevel": "high",
+  "includeCoAuthoredBy": false,
+  "gitAttribution": false,
   "env": {
     "CLAUDE_CODE_SUBAGENT_MODEL": "haiku"
   },
   "statusLine": {
     "type": "command",
-    "command": "bun ~/.claude/statusline-command.js"
+    "command": ""
   },
   "enabledPlugins": {
     "gopls-lsp@claude-plugins-official": true,
@@ -132,21 +145,7 @@ MANAGED='
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.claude/hooks/caveman-activate.js"
-          },
-          {
-            "type": "command",
             "command": "bash $HOME/.claude/hooks/session-color.sh"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node $HOME/.claude/hooks/caveman-mode-tracker.js"
           }
         ]
       }
@@ -178,6 +177,9 @@ MANAGED='
   }
 }
 '
+
+# Inject statusline command (OS-dependent path)
+MANAGED=$(echo "$MANAGED" | jq --arg sl "$STATUSLINE_CMD" '.statusLine.command = $sl')
 
 CURRENT=$(cat)
 

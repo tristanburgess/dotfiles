@@ -1,8 +1,10 @@
+{{- if .isLinuxBaremetal -}}
 #!/bin/bash
 set -euo pipefail
 
 # Blacklist the PC speaker kernel module to prevent hardware beeps
-# (e.g. terminal BEL characters triggering a loud buzzer)
+# (e.g. terminal BEL characters triggering a loud buzzer).
+# Bare-metal Linux only — WSL2 has no /etc/modprobe.d that survives kernel boots.
 if [ ! -f /etc/modprobe.d/nobeep.conf ]; then
     echo "blacklist pcspkr" | sudo tee /etc/modprobe.d/nobeep.conf >/dev/null
 fi
@@ -11,3 +13,4 @@ fi
 if lsmod | grep -q pcspkr; then
     sudo rmmod pcspkr
 fi
+{{- end -}}

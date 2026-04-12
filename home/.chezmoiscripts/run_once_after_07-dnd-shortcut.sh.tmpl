@@ -1,7 +1,9 @@
+{{- if .isLinuxBaremetal -}}
 #!/bin/bash
 set -euo pipefail
 
-# Register Super+Shift+D as a global shortcut for toggling Do Not Disturb
+# Register Super+Shift+D as a global shortcut for toggling Do Not Disturb.
+# Bare-metal Linux/Cinnamon only — gsettings keys don't exist in WSLg.
 # Cinnamon custom-list expects short names (e.g. "dnd-toggle"), NOT full dconf paths.
 # The keybinding data lives at the full dconf path but the list references just the name.
 SHORTCUT_NAME="dnd-toggle"
@@ -25,3 +27,4 @@ fi
 gsettings set "$SCHEMA:$SHORTCUT_PATH" name "Toggle Do Not Disturb"
 gsettings set "$SCHEMA:$SHORTCUT_PATH" command "$HOME/bin/toggle-dnd.sh"
 gsettings set "$SCHEMA:$SHORTCUT_PATH" binding "['<Super><Shift>d']"
+{{- end -}}

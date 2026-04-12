@@ -1,8 +1,10 @@
+{{- if .isLinuxBaremetal -}}
 #!/bin/bash
 # hash: {{ include "dot_config/mise/config.toml" | sha256sum }}
 set -euo pipefail
 
-# Patch kitty .desktop files so GNOME can find the mise-managed kitty
+# Patch kitty .desktop files so GNOME can find the mise-managed kitty.
+# Bare-metal Linux only — WSLg auto-registers kitty.desktop, no patching needed.
 eval "$("$HOME/.local/bin/mise" activate bash)"
 
 KITTY_INSTALL="$(mise where kitty)"
@@ -18,3 +20,4 @@ for desktop in kitty.desktop kitty-open.desktop; do
     sed -i "s|^Exec=kitty|Exec=$KITTY_SHIM|" "$dest"
     sed -i "s|^TryExec=kitty|TryExec=$KITTY_SHIM|" "$dest"
 done
+{{- end -}}
