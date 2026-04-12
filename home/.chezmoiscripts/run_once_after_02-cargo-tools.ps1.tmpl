@@ -47,6 +47,6 @@ if (-not (Get-Command difft -ErrorAction SilentlyContinue)) {
         Write-Warning "Could not find difftastic release for $arch"
     }
 } else {
-    Write-Host "difftastic already installed"
+    Write-Host "difftastic already installed" 
 }
 {{- end -}}

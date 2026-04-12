@@ -27,6 +27,11 @@ bin/toggle-dnd.sh
 .config/gcloud/**
 {{ end }}
 
+{{ if ne .chezmoi.os "windows" }}
+# ─── Linux/WSL: hide Windows-only target files ───
+.minttyrc
+{{ end }}
+
 {{ if and (eq .chezmoi.os "linux") $isWSL }}
 # ─── WSL: hide bare-metal-only target files that fail in WSLg ───
 bin/toggle-dnd.sh

@@ -14,8 +14,22 @@ add_line() {
 }
 
 touch "$HOME/.bashrc"
+add_line '.local/bin'         'export PATH="$HOME/.local/bin:$PATH"'
 add_line 'starship init bash' 'eval "$(starship init bash)"'
 add_line 'gh completion'      'eval "$(gh completion -s bash)"'
 add_line 'jj util completion' 'source <(jj util completion bash)'
 add_line 'CLAUDE_HOME'        'export CLAUDE_HOME="$HOME/.claude"'
+
+# Ensure ~/.local/bin is in Windows user PATH (Claude Code native install location).
+# This makes `claude` available in PowerShell, Windows Terminal, and other non-bash shells.
+LOCAL_BIN="$USERPROFILE\\.local\\bin"
+if ! powershell.exe -NoProfile -Command \
+    "[Environment]::GetEnvironmentVariable('Path','User')" 2>/dev/null \
+    | tr -d '\r' | grep -qF '.local\bin'; then
+    powershell.exe -NoProfile -Command \
+        "[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path','User') + ';$LOCAL_BIN', 'User')"
+    echo "Added $LOCAL_BIN to Windows user PATH"
+else
+    echo "$LOCAL_BIN already in Windows user PATH"
+fi
 {{- end -}}

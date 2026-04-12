@@ -1,6 +1,6 @@
 {{- if eq .chezmoi.os "windows" -}}
 # Windows-only winget installer.
-# chezmoi runs .ps1 natively on Windows via PowerShell — no [interpreters] needed.
+# chezmoi runs .ps1 natively on Windows via PowerShell -no [interpreters] needed.
 # Body-wrapped so this file is a no-op on Linux/macOS.
 $ErrorActionPreference = 'Continue'  # tolerate individual package failures
 
@@ -18,7 +18,7 @@ $packages = @(
     'jqlang.jq'                         # required by modify_settings.json
 )
 
-# Desktop apps — Windows-native equivalents of Linux snap/deb packages
+# Desktop apps -Windows-native equivalents of Linux snap/deb packages
 $desktopApps = @(
     'Anthropic.Claude',                 # Claude Desktop (replaces .deb on Linux)
     'SlackTechnologies.Slack',
