@@ -35,8 +35,15 @@ function Install-FontFromZip {
     }
 }
 
-Install-FontFromZip -Name 'JetBrainsMono Nerd Font' `
-    -Url 'https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip'
+# JetBrainsMono Nerd Font: use winget instead of the ~70MB GitHub zip download.
+$jbm = winget list --id DEVCOM.JetBrainsMonoNerdFont --exact 2>$null | Select-String 'DEVCOM.JetBrainsMonoNerdFont'
+if (-not $jbm) {
+    Write-Host "Installing JetBrainsMono Nerd Font via winget..."
+    winget install --exact --id DEVCOM.JetBrainsMonoNerdFont `
+        --accept-package-agreements --accept-source-agreements --silent
+} else {
+    Write-Host "JetBrainsMono Nerd Font already installed"
+}
 
 Install-FontFromZip -Name 'VT323' `
     -Url 'https://fonts.google.com/download?family=VT323'
