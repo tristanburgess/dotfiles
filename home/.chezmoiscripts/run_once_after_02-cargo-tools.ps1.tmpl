@@ -4,6 +4,19 @@
 # toolchain if absent, then builds tools that have no winget package.
 $ErrorActionPreference = 'Continue'
 
+# MSVC build tools are required for linking — rustup installs the compiler
+# but not the linker/headers. This is a ~2GB download on first install.
+$installed = winget list --id Microsoft.VisualStudio.2022.BuildTools --exact 2>$null |
+    Select-String 'Microsoft.VisualStudio.2022.BuildTools'
+if (-not $installed) {
+    Write-Host "Installing Visual Studio Build Tools (C++ workload)..."
+    winget install --exact --id Microsoft.VisualStudio.2022.BuildTools `
+        --accept-package-agreements --accept-source-agreements --silent `
+        --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+} else {
+    Write-Host "Visual Studio Build Tools already installed"
+}
+
 # Ensure stable toolchain exists (winget only installs rustup itself).
 # rustup writes progress/info to stderr which PowerShell treats as errors
 # under 'Stop' — use Continue and redirect stderr to stdout.
