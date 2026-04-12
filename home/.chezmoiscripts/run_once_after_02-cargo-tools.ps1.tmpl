@@ -1,11 +1,9 @@
 {{- if eq .chezmoi.os "windows" -}}
-# Windows-only cargo installs.
-# Runs after winget (which installs Rustup). Installs the default stable
-# toolchain if absent, then builds tools that have no winget package.
+# Windows-only Rust toolchain setup + pre-built tool binaries.
 $ErrorActionPreference = 'Continue'
 
-# MSVC build tools are required for linking — rustup installs the compiler
-# but not the linker/headers. This is a ~2GB download on first install.
+# MSVC build tools are required for linking Rust projects (like energybeam).
+# rustup only installs the compiler, not the linker/headers.
 $installed = winget list --id Microsoft.VisualStudio.2022.BuildTools --exact 2>$null |
     Select-String 'Microsoft.VisualStudio.2022.BuildTools'
 if (-not $installed) {
@@ -18,27 +16,37 @@ if (-not $installed) {
 }
 
 # Ensure stable toolchain exists (winget only installs rustup itself).
-# rustup writes progress/info to stderr which PowerShell treats as errors
-# under 'Stop' — use Continue and redirect stderr to stdout.
 & rustup toolchain install stable 2>&1 | Out-Host
 
-$tools = @(
-    'difftastic'    # structural diff — used by jj
-)
-
-foreach ($tool in $tools) {
-    $bin = $tool
-    if ($tool -eq 'difftastic') { $bin = 'difft' }
-
-    if (Get-Command $bin -ErrorAction SilentlyContinue) {
-        Write-Host "$tool already installed"
-    } else {
-        Write-Host "Installing $tool via cargo..."
+# difftastic: download pre-built binary instead of cargo install.
+# cargo install builds in %TEMP% which Smart App Control (Win11 default)
+# blocks for unsigned executables (os error 4551).
+if (-not (Get-Command difft -ErrorAction SilentlyContinue)) {
+    Write-Host "Installing difftastic (pre-built binary)..."
+    $arch = 'x86_64-pc-windows-msvc'
+    $release = Invoke-RestMethod 'https://api.github.com/repos/Wilfred/difftastic/releases/latest'
+    $asset = $release.assets | Where-Object { $_.name -match $arch -and $_.name -match '\.zip$' } | Select-Object -First 1
+    if ($asset) {
+        $zip = "$env:TEMP\difft.zip"
+        $extract = "$env:TEMP\difft-extract"
         try {
-            & cargo install $tool
+            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip -UseBasicParsing
+            Expand-Archive -Path $zip -DestinationPath $extract -Force
+            $difft = Get-ChildItem "$extract\difft.exe" -Recurse | Select-Object -First 1
+            if ($difft) {
+                $dest = "$env:USERPROFILE\.cargo\bin\difft.exe"
+                Copy-Item $difft.FullName $dest -Force
+                Write-Host "difftastic installed to $dest"
+            }
         } catch {
-            Write-Warning "Failed to install ${tool}: $_"
+            Write-Warning "Failed to install difftastic: $_"
+        } finally {
+            Remove-Item $zip, $extract -Recurse -Force -ErrorAction SilentlyContinue
         }
+    } else {
+        Write-Warning "Could not find difftastic release for $arch"
     }
+} else {
+    Write-Host "difftastic already installed"
 }
 {{- end -}}
