@@ -2,10 +2,12 @@
 # Windows-only cargo installs.
 # Runs after winget (which installs Rustup). Installs the default stable
 # toolchain if absent, then builds tools that have no winget package.
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 
-# Ensure stable toolchain exists (winget only installs rustup itself)
-& rustup toolchain install stable 2>$null
+# Ensure stable toolchain exists (winget only installs rustup itself).
+# rustup writes progress/info to stderr which PowerShell treats as errors
+# under 'Stop' — use Continue and redirect stderr to stdout.
+& rustup toolchain install stable 2>&1 | Out-Host
 
 $tools = @(
     'difftastic'    # structural diff — used by jj

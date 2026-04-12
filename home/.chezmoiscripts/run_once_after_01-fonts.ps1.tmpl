@@ -45,6 +45,23 @@ if (-not $jbm) {
     Write-Host "JetBrainsMono Nerd Font already installed"
 }
 
-Install-FontFromZip -Name 'VT323' `
-    -Url 'https://fonts.google.com/download?family=VT323'
+# VT323: direct TTF from Google Fonts GitHub mirror (the fonts.google.com/download
+# endpoint no longer returns a valid zip).
+$vt323 = $installedFonts | Where-Object { $_ -match 'VT323' }
+if (-not $vt323) {
+    Write-Host "Installing VT323 font..."
+    $ttf = "$env:TEMP\VT323-Regular.ttf"
+    try {
+        Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/google/fonts/main/ofl/vt323/VT323-Regular.ttf' `
+            -OutFile $ttf -UseBasicParsing
+        $fontsFolder.CopyHere($ttf, 0x10)
+        Write-Host "VT323 font installed"
+    } catch {
+        Write-Warning "Failed to install VT323: $_"
+    } finally {
+        Remove-Item $ttf -Force -ErrorAction SilentlyContinue
+    }
+} else {
+    Write-Host "VT323 font already installed"
+}
 {{- end -}}
