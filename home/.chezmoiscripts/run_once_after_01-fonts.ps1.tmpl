@@ -1,0 +1,43 @@
+{{- if eq .chezmoi.os "windows" -}}
+# Windows-only font installer.
+# Installs JetBrainsMono Nerd Font and VT323 to the system Fonts folder.
+$ErrorActionPreference = 'Continue'
+
+$shell = New-Object -ComObject Shell.Application
+$fontsFolder = $shell.Namespace(0x14)
+$installedFonts = $fontsFolder.Items() | ForEach-Object { $_.Name }
+
+function Install-FontFromZip {
+    param(
+        [string]$Name,
+        [string]$Url
+    )
+    $match = $installedFonts | Where-Object { $_ -match $Name }
+    if ($match) {
+        Write-Host "$Name font already installed"
+        return
+    }
+
+    Write-Host "Installing $Name font..."
+    $zip = "$env:TEMP\$Name.zip"
+    $extract = "$env:TEMP\$Name"
+    try {
+        Invoke-WebRequest -Uri $Url -OutFile $zip -UseBasicParsing
+        Expand-Archive -Path $zip -DestinationPath $extract -Force
+        Get-ChildItem "$extract\*.ttf" -Recurse | ForEach-Object {
+            $fontsFolder.CopyHere($_.FullName, 0x10)
+        }
+        Write-Host "$Name font installed"
+    } catch {
+        Write-Warning "Failed to install ${Name}: $_"
+    } finally {
+        Remove-Item $zip, $extract -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Install-FontFromZip -Name 'JetBrainsMono Nerd Font' `
+    -Url 'https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip'
+
+Install-FontFromZip -Name 'VT323' `
+    -Url 'https://fonts.google.com/download?family=VT323'
+{{- end -}}
