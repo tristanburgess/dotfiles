@@ -1,6 +1,6 @@
 # dotfiles
 
-Dev environment bootstrap for Ubuntu-compatible x64 distros (Ubuntu, Linux Mint, Pop!_OS, elementary OS, etc.). Managed by [chezmoi](https://www.chezmoi.io/).
+Dev environment bootstrap for Ubuntu-compatible x64 distros (Ubuntu, Linux Mint, Pop!_OS, elementary OS, etc.) and Windows 11 (with WSL2 Ubuntu). Managed by [chezmoi](https://www.chezmoi.io/).
 
 ![Kitty terminal with tiling layout, Starship prompt, and Claude Code with status bar](assets/dotfiles.png)
 
@@ -79,6 +79,61 @@ If `~/.ssh/id_ed25519.pub` exists when chezmoi runs, jj is automatically configu
 
 Then open a new Kitty terminal.
 
+### Windows 11 setup
+
+This repo supports three targets: Linux bare metal, WSL2 Ubuntu, and Windows-native (Git Bash + winget). On Windows the daily-driver shell is **Kitty running as a WSLg GUI app inside WSL2 Ubuntu** — pinned to the Windows taskbar — so the existing kitty-scrollback, auto-tiling, and `kitty @` setup all keep working. A thin Windows-native side hosts Claude Code, rustup-MSVC, and the rest for the **energybeam** Rust/MSVC desktop app, where building over `/mnt/c` from WSL would be 5-20× slower than building on the native Windows filesystem.
+
+#### Prerequisites
+
+- Windows 11 (or Windows 10 build 19044+) with vGPU driver for WSLg
+- [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/) (preinstalled on Win10/11)
+- Git for Windows: `winget install Git.Git`
+- chezmoi: `winget install twpayne.chezmoi`
+
+The chicken/egg above is unavoidable — chezmoi needs Git Bash to run `.sh` modify scripts.
+
+#### Step 1 — Apply Windows-native dotfiles
+
+Open Git Bash:
+
+```bash
+chezmoi init --apply tristanburgess/dotfiles
+```
+
+This runs the winget package installer, the WSL bootstrap, and writes a Git Bash `~/.bashrc` with starship/gh/jj integrations.
+
+#### Step 2 — Initialize WSL Ubuntu
+
+If WSL was newly installed, reboot first. Then:
+
+```powershell
+wsl -d Ubuntu
+# set username/password on first launch, then inside Ubuntu:
+sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply tristanburgess/dotfiles
+```
+
+This runs the full Linux setup (apt, mise, kitty, fonts, starship) — WSL-specific items like the kernel-module pcspkr disable and the Cinnamon DND shortcut are gated off automatically.
+
+#### Step 3 — Pin Kitty to the Windows taskbar
+
+WSLg auto-registers `kitty.desktop` as a Start menu entry. Search "kitty" in the Start menu, right-click → Pin to taskbar. The .lnk lives at `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Ubuntu\kitty.lnk`.
+
+#### Step 4 (optional) — BurntToast for Windows-native Claude notifications
+
+In a regular PowerShell window:
+
+```powershell
+Install-Module -Name BurntToast -Scope CurrentUser
+```
+
+This is a one-time manual step — module install requires an interactive trust prompt that chezmoi can't drive.
+
+#### Trade-offs to know
+
+- **Kitty is not the Windows 11 default-terminal handler.** It's a WSLg GUI app, not a ConHost-compatible terminal, so File Explorer "Open in Terminal" still goes to Windows Terminal/conhost. The trade-off bought back kitty-scrollback.nvim, auto-tiling layouts, and `kitty @` remote control.
+- **For energybeam, run `claude` from Windows-native Git Bash**, not from WSL Kitty. Building `cargo` over `/mnt/c` is 5-20× slower than building on the native Windows filesystem.
+- **mise is Linux-only.** Windows version pinning is handled by winget. Revisit if energybeam needs strict toolchain pinning.
+
 ### Updating configs
 
 Edit files under `home/` using chezmoi naming conventions, then:
@@ -106,14 +161,15 @@ To install Renovate on your fork, add the free [Mend Renovate GitHub App](https:
 
 ```
 dotfiles/
-├── .chezmoiroot              # points chezmoi to home/ as source root
-├── home/                     # chezmoi source state
-│   ├── .chezmoi.toml.tmpl    # chezmoi config (prompts for name/email)
-│   ├── .chezmoiignore        # files chezmoi shouldn't manage
-│   ├── .chezmoiscripts/      # setup scripts (packages, fonts, shell integrations)
-│   ├── dot_config/           # → ~/.config/ (kitty, starship, jj, nvim, mise)
-│   ├── dot_claude/           # → ~/.claude/ (settings, hooks, skills)
-│   └── bin/                  # → ~/bin/
-├── assets/                   # README screenshots
+├── .chezmoiroot                # points chezmoi to home/ as source root
+├── home/                       # chezmoi source state
+│   ├── .chezmoi.toml.tmpl      # chezmoi config (prompts + OS detection vars)
+│   ├── .chezmoiignore.tmpl     # OS-conditional whole-file gating
+│   ├── .chezmoiscripts/        # setup scripts (packages, fonts, shell integrations)
+│   │                           # .sh.tmpl → Linux/WSL, .ps1.tmpl → Windows
+│   ├── dot_config/             # → ~/.config/ (kitty, starship, jj, nvim, mise)
+│   ├── dot_claude/             # → ~/.claude/ (settings, hooks, skills)
+│   └── bin/                    # → ~/bin/
+├── assets/                     # README screenshots
 └── README.md
 ```

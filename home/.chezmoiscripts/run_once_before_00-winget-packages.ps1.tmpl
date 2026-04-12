@@ -1,0 +1,35 @@
+{{- if eq .chezmoi.os "windows" -}}
+# Windows-only winget installer.
+# chezmoi runs .ps1 natively on Windows via PowerShell — no [interpreters] needed.
+# Body-wrapped so this file is a no-op on Linux/macOS.
+$ErrorActionPreference = 'Continue'  # tolerate individual package failures
+
+$packages = @(
+    'Git.Git',                          # Git for Windows (provides Git Bash)
+    'twpayne.chezmoi',                  # chezmoi itself (idempotent)
+    'Rustlang.Rustup',                  # Rust toolchain manager (MSVC host)
+    'Neovim.Neovim',
+    'Starship.Starship',
+    'GitHub.cli',
+    'jj-vcs.jj',                        # Jujutsu
+    'Oven-sh.Bun',                      # required by statusline-command.js
+    'Anthropic.ClaudeCode',             # verify ID with `winget search claude` if missing
+    'DEVCOM.JetBrainsMonoNerdFont'
+)
+
+foreach ($pkg in $packages) {
+    $installed = winget list --id $pkg --exact 2>$null | Select-String $pkg
+    if (-not $installed) {
+        Write-Host "Installing $pkg..."
+        try {
+            winget install --exact --id $pkg `
+                --accept-package-agreements `
+                --accept-source-agreements --silent
+        } catch {
+            Write-Warning "Failed to install ${pkg}: $_"
+        }
+    } else {
+        Write-Host "$pkg already installed"
+    }
+}
+{{- end -}}

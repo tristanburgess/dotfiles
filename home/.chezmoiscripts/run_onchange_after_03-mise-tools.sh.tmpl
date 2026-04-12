@@ -1,6 +1,9 @@
+{{- if eq .chezmoi.os "linux" -}}
 #!/bin/bash
 # hash: {{ include "dot_config/mise/config.toml" | sha256sum }}
 set -euo pipefail
 
+# Linux/WSL only — mise stays Linux-side. Windows native uses winget.
 eval "$("$HOME/.local/bin/mise" activate bash)"
 mise install --yes
+{{- end -}}

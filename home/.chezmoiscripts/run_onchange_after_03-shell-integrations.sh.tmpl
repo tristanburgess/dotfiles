@@ -1,7 +1,10 @@
+{{- if eq .chezmoi.os "linux" -}}
 #!/bin/bash
 set -euo pipefail
 
-# Add shell integrations to .bashrc (idempotent — skips if already present)
+# Add shell integrations to .bashrc (idempotent — skips if already present).
+# Linux/WSL only — Windows Git Bash uses run_once_after_00-git-bash-profile.sh.tmpl,
+# which omits mise/zoxide (those are Linux-side via mise).
 
 add_line() {
     local marker="$1" line="$2"
@@ -15,3 +18,4 @@ add_line 'zoxide init bash'     'eval "$(zoxide init bash)"'
 add_line 'starship init bash'   'eval "$(starship init bash)"'
 add_line 'GOPATH.*bin'          'export PATH="$(go env GOPATH)/bin:$PATH"'
 add_line 'jj util completion'   'source <(jj util completion bash)'
+{{- end -}}

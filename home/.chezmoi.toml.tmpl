@@ -1,12 +1,31 @@
 {{- $name := promptStringOnce . "name" "Full name" -}}
 {{- $email := promptStringOnce . "email" "Email address" -}}
 
+{{- /* OS detection: derive isWSL from kernel.osrelease on Linux */ -}}
+{{- $isWSL := false -}}
+{{- if eq .chezmoi.os "linux" -}}
+{{-   $osr := .chezmoi.kernel.osrelease | default "" | lower -}}
+{{-   if or (contains "microsoft" $osr) (contains "wsl" $osr) -}}
+{{-     $isWSL = true -}}
+{{-   end -}}
+{{- end -}}
+
 sourceDir = {{ .chezmoi.sourceDir | quote }}
 
 [data]
     name = {{ $name | quote }}
     email = {{ $email | quote }}
+    isWSL = {{ $isWSL }}
+    isWindows = {{ eq .chezmoi.os "windows" }}
+    isLinuxBaremetal = {{ and (eq .chezmoi.os "linux") (not $isWSL) }}
 
 [merge]
     command = "nvim"
     args = ["-d", "{{ "{{" }} .Destination {{ "}}" }}", "{{ "{{" }} .Source {{ "}}" }}", "{{ "{{" }} .Target {{ "}}" }}"]
+
+{{- if eq .chezmoi.os "windows" }}
+
+# Run .sh files (modify_settings.json, body-wrapped chezmoiscripts) via Git Bash on Windows.
+[interpreters.sh]
+    command = 'C:/Program Files/Git/bin/bash.exe'
+{{- end }}

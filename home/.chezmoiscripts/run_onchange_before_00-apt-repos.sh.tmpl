@@ -1,3 +1,4 @@
+{{- if eq .chezmoi.os "linux" -}}
 #!/bin/bash
 set -euo pipefail
 
@@ -90,3 +91,4 @@ fi
 
 sudo apt update -qq
 printf "All custom APT repos configured.\n"
+{{- end -}}

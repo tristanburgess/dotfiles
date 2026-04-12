@@ -1,5 +1,9 @@
+{{- if eq .chezmoi.os "linux" -}}
 #!/bin/bash
 set -euo pipefail
+
+# Linux/WSL only — `tar --zstd` requires zstd support, which Git for Windows
+# doesn't reliably ship. The prose-craft tarball is also Linux-side only.
 
 # --- Registers: extract from tarball if present ---
 TARBALL="/tmp/prose-craft-registers.tar.zst"
@@ -33,3 +37,4 @@ for cache_skill in "$HOME"/.claude/plugins/cache/prose-craft/prose-craft/*/skill
         printf "Synced SKILL.md to cache: %s\n" "$cache_skill"
     fi
 done
+{{- end -}}

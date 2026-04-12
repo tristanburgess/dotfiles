@@ -1,0 +1,22 @@
+{{- if eq .chezmoi.os "windows" -}}
+# Install WSL2 + Ubuntu if not already present.
+# `run_once` (not `run_onchange`) because `wsl --install` is non-idempotent
+# and may require a reboot.
+$ErrorActionPreference = 'Stop'
+
+$distros = (wsl --list --quiet) -replace "`0","" -split "`r`n" |
+           Where-Object { $_ -match '\S' }
+
+if ($distros -notcontains 'Ubuntu') {
+    Write-Host "Installing WSL2 + Ubuntu..."
+    wsl --install -d Ubuntu --no-launch
+    Write-Host ""
+    Write-Host "WSL Ubuntu installed. Next steps:"
+    Write-Host "  1. Reboot if Windows prompts"
+    Write-Host "  2. wsl -d Ubuntu  (set username/password on first launch)"
+    Write-Host "  3. Inside Ubuntu:"
+    Write-Host "     sh -c ""`$(curl -fsLS get.chezmoi.io)"" -- init --apply tristanburgess/dotfiles"
+} else {
+    Write-Host "WSL Ubuntu already present"
+}
+{{- end -}}

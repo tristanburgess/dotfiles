@@ -1,7 +1,9 @@
+{{- if .isLinuxBaremetal -}}
 #!/bin/bash
 set -euo pipefail
 
-# Snap packages — re-runs when this list changes
+# Snap packages — re-runs when this list changes.
+# Bare-metal Linux only — snapd is not supported in WSL2 by default.
 
 SNAPS=(
     "foliate"
@@ -19,3 +21,4 @@ for entry in "${SNAPS[@]}"; do
 done
 
 printf "All snap packages installed.\n"
+{{- end -}}

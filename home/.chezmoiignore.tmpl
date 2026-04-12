@@ -1,0 +1,33 @@
+# Files managed by run scripts or created at runtime
+.claude/claude-logo.png
+.claude/budget-tracker.json
+.claude/projects/**
+.claude/memory/**
+.claude/todos/**
+.claude/plans/**
+
+{{- /* Re-derive isWSL here because .chezmoiignore is rendered before .chezmoi.toml.tmpl
+       data is exposed in some chezmoi versions; safer to be self-contained. */ -}}
+{{- $isWSL := false -}}
+{{- if eq .chezmoi.os "linux" -}}
+{{-   $osr := .chezmoi.kernel.osrelease | default "" | lower -}}
+{{-   if or (contains "microsoft" $osr) (contains "wsl" $osr) -}}
+{{-     $isWSL = true -}}
+{{-   end -}}
+{{- end }}
+
+{{ if eq .chezmoi.os "windows" }}
+# ─── Windows-native: hide everything Linux-only ───
+# (.chezmoiscripts/* entries are gated via body-wrapped .tmpl files instead,
+#  because .chezmoiignore matches target paths and scripts have no target.)
+# Patterns are TARGET paths (post-`dot_` and `executable_` rewrites).
+bin/toggle-dnd.sh
+.config/kitty/**
+.config/mise/**
+.config/gcloud/**
+{{ end }}
+
+{{ if and (eq .chezmoi.os "linux") $isWSL }}
+# ─── WSL: hide bare-metal-only target files that fail in WSLg ───
+bin/toggle-dnd.sh
+{{ end }}
