@@ -159,9 +159,10 @@ git checkout claude/some-branch-name
 # Install chezmoi (skip if you already have it on PATH)
 sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin
 
-# Init chezmoi pointing at the LOCAL clone — without this step, `chezmoi diff`
-# and `chezmoi apply` silently no-op because chezmoi has no source dir registered.
-~/.local/bin/chezmoi init --source ~/dev/code/dotfiles
+# Init chezmoi pointing at the LOCAL clone's source state directory (home/ per
+# .chezmoiroot) — without this step, `chezmoi diff` and `chezmoi apply` silently
+# no-op because chezmoi has no source dir registered.
+~/.local/bin/chezmoi init --source ~/dev/code/dotfiles/home
 
 # Sanity-check OS gating evaluates the way you expect
 ~/.local/bin/chezmoi execute-template '{{ .chezmoi.os }} wsl={{ .isWSL }} bm={{ .isLinuxBaremetal }}'
@@ -176,7 +177,7 @@ sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin
 ~/.local/bin/chezmoi apply
 ```
 
-On Windows-native, the equivalent flow uses `winget install twpayne.chezmoi` + Git Bash, then `chezmoi init --source 'C:/Users/<you>/dev/code/dotfiles'` from Git Bash.
+On Windows-native, the equivalent flow uses `winget install twpayne.chezmoi` + Git Bash, then `chezmoi init --source 'C:/Users/<you>/dev/code/dotfiles/home'` from Git Bash.
 
 ### Post-install
 

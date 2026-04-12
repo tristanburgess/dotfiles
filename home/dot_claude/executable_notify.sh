@@ -170,13 +170,22 @@ notify_wsl() {
     # _NET_CLIENT_LIST on the root window — `xprop -root` is empty and
     # `wmctrl -l` errors. So: no focus tracking, no window resolution,
     # no auto-dismiss loop. Always fire.
+    # Derive session context from PWD (can't resolve window title without X11).
+    local SESSION
+    SESSION=$(basename "$(pwd)")
+    local BODY
+    if [ -n "$SESSION" ] && [ "$SESSION" != "/" ]; then
+        BODY="${SESSION}: ${MESSAGE}"
+    else
+        BODY="$MESSAGE"
+    fi
     (
         notify-send \
             --urgency=critical \
             --app-name="Claude Code" \
             --icon="$ICON" \
             'Claude Code' \
-            "$MESSAGE" 2>/dev/null || true
+            "$BODY" 2>/dev/null || true
     ) &
     disown
 }
@@ -186,15 +195,14 @@ notify_windows() {
     if ! command -v powershell.exe >/dev/null 2>&1; then
         return 0
     fi
-    # Strip pango markup for the toast (BurntToast renders plain text)
-    local BODY="$RAW"
-    BODY="${BODY//\"/\`\"}"
-    powershell.exe -NoProfile -Command "
+    # Pass body via stdin to avoid bash expansion mangling $, backticks, etc.
+    printf '%s' "$RAW" | powershell.exe -NoProfile -Command '
+        $body = [Console]::In.ReadToEnd()
         if (Get-Module -ListAvailable -Name BurntToast) {
             Import-Module BurntToast
-            New-BurntToastNotification -Text 'Claude Code', \"$BODY\"
+            New-BurntToastNotification -Text "Claude Code", $body
         }
-    " >/dev/null 2>&1 &
+    ' >/dev/null 2>&1 &
     disown
 }
 
