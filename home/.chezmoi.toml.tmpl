@@ -25,7 +25,13 @@ sourceDir = {{ .chezmoi.sourceDir | quote }}
 
 {{- if eq .chezmoi.os "windows" }}
 
-# Run .sh files (modify_settings.json, body-wrapped chezmoiscripts) via Git Bash on Windows.
+# Run .sh scripts via Git Bash on Windows (body-wrapped chezmoiscripts).
 [interpreters.sh]
+    command = 'C:/Program Files/Git/bin/bash.exe'
+
+# modify_settings.json is a bash script whose extension comes from the target
+# name (settings.json), not from the script language. Without this, chezmoi
+# creates a .json temp file and Windows tries to "open" it instead of exec'ing it.
+[interpreters.json]
     command = 'C:/Program Files/Git/bin/bash.exe'
 {{- end }}

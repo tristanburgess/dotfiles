@@ -5,6 +5,7 @@
 $ErrorActionPreference = 'Continue'  # tolerate individual package failures
 
 $packages = @(
+    'Microsoft.PowerShell',             # Update to latest
     'Git.Git',                          # Git for Windows (provides Git Bash)
     'twpayne.chezmoi',                  # chezmoi itself (idempotent)
     'Rustlang.Rustup',                  # Rust toolchain manager (MSVC host)
@@ -14,6 +15,7 @@ $packages = @(
     'jj-vcs.jj',                        # Jujutsu
     'Oven-sh.Bun',                      # required by statusline-command.js
     'Anthropic.ClaudeCode',             # verify ID with `winget search claude` if missing
+    'jqlang.jq'                         # required by modify_settings.json
 )
 
 # Desktop apps — Windows-native equivalents of Linux snap/deb packages

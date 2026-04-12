@@ -97,13 +97,20 @@ Thin Windows-native layer: Claude Code, rustup-MSVC, neovim, jj, gh, bun, JetBra
 - Windows 11 (or Windows 10 build 19044+) with vGPU driver for WSLg
 - [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/) (preinstalled on Win10/11)
 
-#### Step 1: Install Git for Windows + chezmoi
+#### Step 1: Bootstrap from PowerShell
+
+Run these in a **regular PowerShell window** (not Git Bash):
 
 ```powershell
+# Allow locally-created scripts to run — Windows ships with Restricted which
+# blocks all .ps1 execution. RemoteSigned is the standard dev-machine setting.
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# Install Git for Windows + chezmoi
 winget install Git.Git twpayne.chezmoi
 ```
 
-Unavoidable bootstrap: chezmoi needs Git Bash to execute `.sh` modify scripts (`modify_settings.json.tmpl`) and body-wrapped `.sh.tmpl` chezmoiscripts. The repo's [`[interpreters.sh]`](home/.chezmoi.toml.tmpl) entry points chezmoi at `C:/Program Files/Git/bin/bash.exe`.
+chezmoi needs Git Bash to execute the `.sh` modify scripts and body-wrapped `.sh.tmpl` chezmoiscripts. The repo's [`[interpreters.sh]`](home/.chezmoi.toml.tmpl) entry points chezmoi at `C:/Program Files/Git/bin/bash.exe`.
 
 #### Step 2: Apply Windows-native dotfiles
 
