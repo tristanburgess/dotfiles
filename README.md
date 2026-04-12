@@ -45,21 +45,140 @@ All developer tools are installed and kept up to date by [mise](https://mise.jdx
 
 ## Usage
 
-### Fresh install
+This repo supports three targets, all from a single source tree:
+
+| Target | Shell | Package manager | Bootstrap |
+|---|---|---|---|
+| **Linux bare metal** | bash + Kitty | apt + mise | curl one-liner |
+| **WSL2 Ubuntu** | bash + Kitty (WSLg GUI) | apt + mise | curl one-liner |
+| **Windows 11 native** | Git Bash | winget | Manual chezmoi install + Git Bash |
+
+OS gating happens automatically — each script checks `.chezmoi.os` (and a derived `isWSL` flag) and no-ops on the wrong target.
+
+### Linux bare metal
 
 ```bash
-# Install chezmoi and apply dotfiles in one command
-sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply tristanburgess/dotfiles
+sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin init --apply tristanburgess/dotfiles
 ```
 
-Or if you prefer to clone manually:
+This installs chezmoi to `~/.local/bin/chezmoi`, fetches this repo, prompts for name + email, and runs the full `.chezmoiscripts/` chain: apt repos and packages, mise + pinned tools, JetBrainsMono Nerd Font, pcspkr kernel-module disable, GNOME `.desktop` patching for the mise-managed Kitty, the Cinnamon DND shortcut, the Anthropic Claude Desktop `.deb`, snap packages (Slack/Spotify/Notion/Foliate), and the Discord/Zoom `.deb`s. First run takes a while.
+
+### WSL2 Ubuntu
+
+Same one-liner, run inside the WSL distro (after `wsl -d Ubuntu`):
 
 ```bash
-git clone git@github.com:tristanburgess/dotfiles.git
-chezmoi init --source dotfiles/ --apply
+sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin init --apply tristanburgess/dotfiles
 ```
 
-On first run, chezmoi prompts for your name and email (used in jj/git config). After install:
+The following scripts are **gated off automatically** because they don't work or aren't useful in WSL2:
+
+- `pcspkr-disable` — kernel module changes don't persist in WSL2
+- `dnd-shortcut` and `bin/toggle-dnd.sh` — Cinnamon `gsettings` keys don't exist in WSLg
+- `kitty-desktop` — WSLg auto-registers `kitty.desktop` from the Linux side, no GNOME patching needed
+- `claude-desktop` (`.deb` installer) — use the Windows-native installer instead
+- `snap-packages` — snapd is not supported in WSL2 by default
+- `standalone-debs` (Discord/Zoom) — use the Windows-native versions
+
+After applying, launch Kitty as a WSLg GUI app:
+
+```bash
+nohup kitty &
+```
+
+WSLg auto-creates a Start menu entry — search "kitty" in Windows Start, right-click → **Pin to taskbar**. The `.lnk` lives at `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Ubuntu\kitty.lnk`.
+
+### Windows 11 native
+
+A thin Windows-native side that hosts Claude Code, rustup-MSVC, neovim, jj, gh, bun, and JetBrainsMono Nerd Font for native Windows builds (e.g. Rust/MSVC desktop apps where building over `/mnt/c` from WSL is 5-20× slower than the native Windows filesystem). The daily-driver shell stays Kitty-in-WSLg from the section above.
+
+#### Prerequisites
+
+- Windows 11 (or Windows 10 build 19044+) with the vGPU driver for WSLg
+- [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/) (preinstalled on Win10/11)
+
+#### Step 1 — Install Git for Windows + chezmoi
+
+```powershell
+winget install Git.Git twpayne.chezmoi
+```
+
+This bootstrap step is unavoidable: chezmoi needs Git Bash to execute the `.sh` modify scripts (`modify_settings.json.tmpl`) and the body-wrapped `.sh.tmpl` chezmoiscripts. The repo's [`[interpreters.sh]`](home/.chezmoi.toml.tmpl) entry points chezmoi at `C:/Program Files/Git/bin/bash.exe` after that.
+
+#### Step 2 — Apply Windows-native dotfiles
+
+Open **Git Bash**:
+
+```bash
+chezmoi init --apply tristanburgess/dotfiles
+```
+
+This runs:
+- `run_once_before_00-winget-packages.ps1` — Rustup-MSVC, Neovim, Starship, GitHub CLI, jj, Bun, Claude Code, JetBrainsMono Nerd Font
+- `run_once_after_00-wsl-bootstrap.ps1` — installs WSL2 + Ubuntu if absent (may require reboot)
+- `run_once_after_00-git-bash-profile.sh` — writes a Git Bash `~/.bashrc` with starship + gh + jj completions
+
+#### Step 3 — Bootstrap WSL Ubuntu
+
+After step 2 (and reboot if Windows prompted):
+
+```powershell
+wsl -d Ubuntu
+# set username/password on first launch, then inside Ubuntu:
+sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin init --apply tristanburgess/dotfiles
+```
+
+Then follow the [WSL2 Ubuntu](#wsl2-ubuntu) section above for pinning Kitty to the taskbar.
+
+#### Step 4 (optional) — BurntToast for Windows-native Claude notifications
+
+In a regular PowerShell window:
+
+```powershell
+Install-Module -Name BurntToast -Scope CurrentUser
+```
+
+Manual one-time step — PowerShell module install needs an interactive trust prompt that chezmoi can't drive. Without BurntToast, the `notify.sh` Windows branch silently no-ops.
+
+#### Trade-offs to know
+
+- **Kitty is not the Windows 11 default-terminal handler.** It's a WSLg GUI app, not a ConHost-compatible terminal, so File Explorer "Open in Terminal" still goes to Windows Terminal / conhost. The trade-off bought back kitty-scrollback.nvim, auto-tiling layouts, and `kitty @` remote control.
+- **For native Windows builds, run `claude` from Windows-native Git Bash**, not from WSL Kitty. Anything filesystem-heavy (cargo, npm install, bun install) over `/mnt/c` is 5-20× slower than building on the native Windows filesystem.
+- **mise is Linux-only** in this repo. Windows tool versions are pinned by winget. Revisit if version pinning matters for native Windows projects.
+
+### Testing a branch
+
+To preview a feature branch (like a Renovate PR or a refactor branch) before merging — either on Linux bare metal or inside WSL2:
+
+```bash
+# Clone explicitly so you control which ref is checked out
+git clone https://github.com/tristanburgess/dotfiles.git ~/dev/code/dotfiles
+cd ~/dev/code/dotfiles
+git checkout claude/some-branch-name
+
+# Install chezmoi (skip if you already have it on PATH)
+sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin
+
+# Init chezmoi pointing at the LOCAL clone — without this step, `chezmoi diff`
+# and `chezmoi apply` silently no-op because chezmoi has no source dir registered.
+~/.local/bin/chezmoi init --source ~/dev/code/dotfiles
+
+# Sanity-check OS gating evaluates the way you expect
+~/.local/bin/chezmoi execute-template '{{ .chezmoi.os }} wsl={{ .isWSL }} bm={{ .isLinuxBaremetal }}'
+# linux wsl=false bm=true   ← bare metal
+# linux wsl=true  bm=false  ← WSL
+# windows wsl=false bm=false ← Git Bash on Windows
+
+# Preview without writing anything
+~/.local/bin/chezmoi diff
+
+# Apply when it looks right
+~/.local/bin/chezmoi apply
+```
+
+On Windows-native, the equivalent flow uses `winget install twpayne.chezmoi` + Git Bash, then `chezmoi init --source 'C:/Users/<you>/dev/code/dotfiles'` from Git Bash.
+
+### Post-install
 
 ```bash
 source ~/.bashrc
@@ -78,61 +197,6 @@ chezmoi apply  # re-apply to pick up the signing config in jj
 If `~/.ssh/id_ed25519.pub` exists when chezmoi runs, jj is automatically configured to sign all commits.
 
 Then open a new Kitty terminal.
-
-### Windows 11 setup
-
-This repo supports three targets: Linux bare metal, WSL2 Ubuntu, and Windows-native (Git Bash + winget). On Windows the daily-driver shell is **Kitty running as a WSLg GUI app inside WSL2 Ubuntu** — pinned to the Windows taskbar — so the existing kitty-scrollback, auto-tiling, and `kitty @` setup all keep working. A thin Windows-native side hosts Claude Code, rustup-MSVC, and the rest for the **energybeam** Rust/MSVC desktop app, where building over `/mnt/c` from WSL would be 5-20× slower than building on the native Windows filesystem.
-
-#### Prerequisites
-
-- Windows 11 (or Windows 10 build 19044+) with vGPU driver for WSLg
-- [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/) (preinstalled on Win10/11)
-- Git for Windows: `winget install Git.Git`
-- chezmoi: `winget install twpayne.chezmoi`
-
-The chicken/egg above is unavoidable — chezmoi needs Git Bash to run `.sh` modify scripts.
-
-#### Step 1 — Apply Windows-native dotfiles
-
-Open Git Bash:
-
-```bash
-chezmoi init --apply tristanburgess/dotfiles
-```
-
-This runs the winget package installer, the WSL bootstrap, and writes a Git Bash `~/.bashrc` with starship/gh/jj integrations.
-
-#### Step 2 — Initialize WSL Ubuntu
-
-If WSL was newly installed, reboot first. Then:
-
-```powershell
-wsl -d Ubuntu
-# set username/password on first launch, then inside Ubuntu:
-sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply tristanburgess/dotfiles
-```
-
-This runs the full Linux setup (apt, mise, kitty, fonts, starship) — WSL-specific items like the kernel-module pcspkr disable and the Cinnamon DND shortcut are gated off automatically.
-
-#### Step 3 — Pin Kitty to the Windows taskbar
-
-WSLg auto-registers `kitty.desktop` as a Start menu entry. Search "kitty" in the Start menu, right-click → Pin to taskbar. The .lnk lives at `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Ubuntu\kitty.lnk`.
-
-#### Step 4 (optional) — BurntToast for Windows-native Claude notifications
-
-In a regular PowerShell window:
-
-```powershell
-Install-Module -Name BurntToast -Scope CurrentUser
-```
-
-This is a one-time manual step — module install requires an interactive trust prompt that chezmoi can't drive.
-
-#### Trade-offs to know
-
-- **Kitty is not the Windows 11 default-terminal handler.** It's a WSLg GUI app, not a ConHost-compatible terminal, so File Explorer "Open in Terminal" still goes to Windows Terminal/conhost. The trade-off bought back kitty-scrollback.nvim, auto-tiling layouts, and `kitty @` remote control.
-- **For energybeam, run `claude` from Windows-native Git Bash**, not from WSL Kitty. Building `cargo` over `/mnt/c` is 5-20× slower than building on the native Windows filesystem.
-- **mise is Linux-only.** Windows version pinning is handled by winget. Revisit if energybeam needs strict toolchain pinning.
 
 ### Updating configs
 
