@@ -5,7 +5,11 @@ name = {{ .name | quote }}
 email = {{ .email | quote }}
 
 [ui]
+# difftastic requires cargo install on Windows (no winget package yet).
+# Guard so jj falls back to its built-in diff when difft isn't on PATH.
+{{- if lookPath "difft" }}
 diff-formatter = ["difft", "--color=always", "$left", "$right"]
+{{- end }}
 diff-editor = ["code", "--wait", "--diff"]
 
 [revsets]

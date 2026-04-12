@@ -145,7 +145,7 @@ MANAGED='
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.claude/hooks/caveman-activate.js"
+            "command": "bun $HOME/.claude/hooks/caveman-activate.js"
           },
           {
             "type": "command",
@@ -159,7 +159,7 @@ MANAGED='
         "hooks": [
           {
             "type": "command",
-            "command": "node $HOME/.claude/hooks/caveman-mode-tracker.js"
+            "command": "bun $HOME/.claude/hooks/caveman-mode-tracker.js"
           }
         ]
       }
@@ -194,18 +194,6 @@ MANAGED='
 
 # Inject statusline command (OS-dependent path)
 MANAGED=$(echo "$MANAGED" | jq --arg sl "$STATUSLINE_CMD" '.statusLine.command = $sl')
-
-{{- if eq .chezmoi.os "windows" }}
-# Caveman plugin Windows compatibility unverified — strip plugin keys + hooks
-# so the unresolved `caveman-activate.js` / `caveman-mode-tracker.js` paths
-# don't fire missing-script errors on every session start.
-MANAGED=$(echo "$MANAGED" | jq '
-    del(.enabledPlugins."caveman@caveman")
-    | del(.extraKnownMarketplaces.caveman)
-    | .hooks.SessionStart[0].hooks |= map(select(.command | test("caveman") | not))
-    | del(.hooks.UserPromptSubmit)
-')
-{{- end }}
 
 CURRENT=$(cat)
 
