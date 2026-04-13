@@ -28,6 +28,12 @@ STATUSLINE_CMD='bun "{{ $home }}/.claude/statusline-command.js"'
 STATUSLINE_CMD='bun ~/.claude/statusline-command.js'
 {{- end }}
 
+# Guard: if jq isn't installed yet, pass through the current file unchanged.
+if ! command -v jq >/dev/null 2>&1; then
+  cat
+  exit 0
+fi
+
 MANAGED='
 {
   "attribution": {

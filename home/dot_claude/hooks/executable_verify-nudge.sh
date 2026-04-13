@@ -12,10 +12,11 @@ STOP_REASON=$(echo "$INPUT" | jq -r '.stop_reason // empty')
 [ "$STOP_REASON" = "end_turn" ] || exit 0
 
 # Check if any files were modified in the last 2 minutes (proxy for "this turn")
-RECENT_EDITS=$(find "${CLAUDE_PROJECT_DIR:-.}" -maxdepth 3 -newer /tmp/.claude-turn-marker -name '*.go' -o -name '*.py' -o -name '*.ts' -o -name '*.js' -o -name '*.sh' 2>/dev/null | head -5)
+MARKER="$HOME/.claude/.claude-turn-marker"
+RECENT_EDITS=$(find "${CLAUDE_PROJECT_DIR:-.}" -maxdepth 3 -newer "$MARKER" -name '*.go' -o -name '*.py' -o -name '*.ts' -o -name '*.js' -o -name '*.sh' 2>/dev/null | head -5)
 
 # Refresh the marker for next turn
-touch /tmp/.claude-turn-marker
+touch "$MARKER"
 
 if [ -n "$RECENT_EDITS" ]; then
   printf "Reminder: verify your changes compile/pass before finishing — run build, lint, or tests if you haven't already."

@@ -1,0 +1,13 @@
+# Secrets and credentials
+.env*
+credentials*
+*.key
+*.pem
+
+# Runtime files (created by Claude Code, not managed by chezmoi)
+home/dot_claude/claude-logo.png
+home/dot_claude/budget-tracker.json
+home/dot_claude/projects/
+home/dot_claude/memory/
+home/dot_claude/todos/
+home/dot_claude/plans/

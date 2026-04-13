@@ -1,9 +1,22 @@
-{{- if eq .chezmoi.os "linux" -}}
+{{- if ne .chezmoi.os "darwin" -}}
 #!/bin/bash
 # hash: {{ include "dot_config/mise/config.toml" | sha256sum }}
 set -euo pipefail
 
-# Linux/WSL only — mise stays Linux-side. Windows native uses winget.
-eval "$("$HOME/.local/bin/mise" activate bash)"
-mise install --yes
+# Cross-platform: Linux installs mise to ~/.local/bin, Windows via winget to PATH.
+if command -v mise &>/dev/null; then
+    MISE=mise
+elif [[ -x "$HOME/.local/bin/mise" ]]; then
+    MISE="$HOME/.local/bin/mise"
+else
+    echo "mise not found, skipping tool install"
+    exit 0
+fi
+
+"$MISE" install --yes
+
+# mise installs rustup; ensure a stable toolchain exists for actual compilation
+if command -v rustup &>/dev/null; then
+    rustup toolchain install stable 2>/dev/null
+fi
 {{- end -}}
