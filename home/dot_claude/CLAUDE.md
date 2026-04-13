@@ -6,6 +6,10 @@ Use `jj` (Jujutsu) instead of `git` for all version control operations. Use `gh`
 
 **Always load the `/sources` skill before making any factual claim, assumption, or inference.**
 
+# Google Workspace
+
+**Always load the `/gws` skill before any `gws` CLI operation** (Docs editing, Drive export, etc.).
+
 # Dotfiles
 
 All config changes (shell, kitty, Claude, mise, etc.) go in the chezmoi source at `~/dev/code/dotfiles/` first, then `chezmoi apply` to the live location. Never edit managed files in `~/` directly unless explicitly asked.
