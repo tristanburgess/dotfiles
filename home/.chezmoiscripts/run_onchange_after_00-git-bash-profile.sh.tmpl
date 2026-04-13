@@ -1,0 +1,23 @@
+{{- if eq .chezmoi.os "windows" -}}
+#!/bin/bash
+set -euo pipefail
+
+# Set up Git Bash ~/.bashrc with shell integrations.
+# Windows-only — the Linux equivalent is run_onchange_after_03-shell-integrations.sh.tmpl.
+
+add_line() {
+    local marker="$1" line="$2"
+    if ! grep -qF "$marker" "$HOME/.bashrc" 2>/dev/null; then
+        echo "$line" >> "$HOME/.bashrc"
+    fi
+}
+
+touch "$HOME/.bashrc"
+add_line 'mise activate bash'  'eval "$(mise activate bash)"'
+add_line 'zoxide init bash'    'eval "$(zoxide init bash)"'
+add_line 'starship init bash'  'eval "$(starship init bash)"'
+add_line 'GOPATH.*bin'         'export PATH="$(go env GOPATH)/bin:$PATH"'
+add_line 'gh completion'       'eval "$(gh completion -s bash)"'
+add_line 'jj util completion'  'source <(jj util completion bash)'
+add_line 'CLAUDE_HOME'         'export CLAUDE_HOME="$HOME/.claude"'
+{{- end -}}
