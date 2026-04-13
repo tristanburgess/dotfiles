@@ -21,6 +21,16 @@ and irreversible action confirmations exempt (caveman Auto-Clarity rule).
 GitHub issues, PR descriptions, design docs, Slack messages, emails, blog posts, and
 any documentation with readers beyond myself (brag docs, runbooks, guides).
 
-# Multiline Commands
+# Scratch & Working Files
 
-When suggesting multiline commands or scripts, write them to a temporary file (e.g., `/tmp/cmd.sh`) instead of displaying inline. This makes them easy to copy, edit, and execute. Print the file path after writing so the user can open or run it.
+**All temporary artifacts go in `/tmp/`, never in the repo working directory.** This includes:
+- Multiline commands and scripts (`/tmp/cmd.sh`)
+- Exported documents (design docs, Google Doc exports, etc.)
+- Data dumps, query results, intermediate processing files
+- Any file that is a working copy, not a deliverable
+
+Why: `jj` auto-snapshots every untracked file in the repo into the current change. Writing
+scratch files in the repo pollutes the working copy and commit history.
+
+For tools that restrict output to CWD (e.g., `gws --output`), `cd /tmp` before running, then
+`cd` back. Print the `/tmp/` file path after writing so it's easy to find.
