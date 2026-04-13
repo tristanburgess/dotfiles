@@ -18,6 +18,8 @@ jujutsu = "0.40.0"
 # renovate: packageName=neovim/neovim datasource=github-releases
 neovim = "0.12.1"
 node = "lts"
+# renovate: packageName=rust-lang/rust datasource=github-releases
+rust = "1.94.1"
 # renovate: packageName=starship/starship datasource=github-releases
 starship = "1.24.2"
 # renovate: packageName=hashicorp/terraform datasource=github-releases
@@ -29,9 +31,6 @@ zoxide = "0.9.9"
 # Chezmoi: bootstrapped by winget on Windows before mise exists
 # renovate: packageName=twpayne/chezmoi datasource=github-releases
 chezmoi = { version = "2.70.1", os = ["linux"] }
-# Rust: winget installs Rustup with MSVC toolchain on Windows
-# renovate: packageName=rust-lang/rust datasource=github-releases
-rust = { version = "1.94.1", os = ["linux"] }
 # Kitty: no Windows build (runs in WSL via WSLg)
 # renovate: packageName=kovidgoyal/kitty datasource=github-releases
 kitty = { version = "0.46.2", os = ["linux"] }

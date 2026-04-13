@@ -14,4 +14,9 @@ else
 fi
 
 "$MISE" install --yes
+
+# mise installs rustup; ensure a stable toolchain exists for actual compilation
+if command -v rustup &>/dev/null; then
+    rustup toolchain install stable 2>/dev/null
+fi
 {{- end -}}

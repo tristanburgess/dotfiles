@@ -25,7 +25,7 @@ Dev environment bootstrap for Ubuntu-compatible x64 distros and Windows 11 + WSL
 | Terminal & prompt | [Kitty](https://sw.kovidgoyal.net/kitty/) (Linux), [Starship](https://starship.rs/), [zoxide](https://github.com/ajeetdsouza/zoxide) |
 | Version control | [Jujutsu](https://jj-vcs.github.io/jj/), [GitHub CLI](https://cli.github.com/), [difftastic](https://difftastic.wilfred.me/) |
 | Editor | [Neovim](https://neovim.io/) + [kitty-scrollback.nvim](https://github.com/mikesmithgh/kitty-scrollback.nvim) |
-| Languages | [Go](https://go.dev/), [Rust](https://www.rust-lang.org/) (Linux), [Node.js](https://nodejs.org/) LTS, [Bun](https://bun.sh/), Java |
+| Languages | [Go](https://go.dev/), [Rust](https://www.rust-lang.org/), [Node.js](https://nodejs.org/) LTS, [Bun](https://bun.sh/), Java |
 | AI | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with hooks, notifications, status line |
 | Cloud CLIs | AWS CLI, Azure CLI, gcloud (mise on Linux, winget on Windows) |
 | Infra | [Terraform](https://www.terraform.io/), [jq](https://jqlang.github.io/jq/) |
@@ -58,7 +58,7 @@ Installs chezmoi, prompts for name + email, then runs the full bootstrap: apt re
 
 Thin Windows-native layer for builds where filesystem-heavy operations (cargo, npm, bun) over `/mnt/c` from WSL are 5-20x slower than native. The daily-driver shell stays Kitty-in-WSLg.
 
-**winget handles:** bootstrap deps (Git, chezmoi, Rustup-MSVC, mise), cloud CLIs (AWS/Azure/gcloud), desktop apps (Claude Desktop, Slack, Spotify, Notion, Discord, Zoom, SumatraPDF).
+**winget handles:** bootstrap deps (Git, chezmoi, mise), cloud CLIs (AWS/Azure/gcloud), desktop apps (Claude Desktop, Slack, Spotify, Notion, Discord, Zoom, SumatraPDF).
 **mise handles:** all other dev tools — same pinned versions as Linux.
 
 **Prerequisites:** Windows 11 (or 10 build 19044+) with [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/).
