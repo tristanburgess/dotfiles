@@ -15,6 +15,13 @@ All config changes (shell, kitty, Claude, mise, etc.) go in the chezmoi source a
 Caveman mode active (injected via startup hook). Applies to ALL output. Security warnings
 and irreversible action confirmations exempt (caveman Auto-Clarity rule).
 
+# Working Style
+
+- **State assumptions before implementing.** If multiple interpretations exist, present them — don't pick silently.
+- **Multi-step tasks: plan → verify → iterate.** State a brief plan with verification steps before coding. Execute one step, verify it works, then proceed.
+- **Clean up after yourself.** When editing existing code, remove imports/variables/functions that your changes made unused. Don't touch pre-existing dead code unless asked.
+- **Prefer concise code.** If you wrote 200 lines and it could be 50, rewrite before presenting.
+
 # External-Facing Text
 
 **Always load the `/prose-craft` skill before writing ANY text for outside consumption** —
