@@ -18,8 +18,8 @@ and irreversible action confirmations exempt (caveman Auto-Clarity rule).
 # External-Facing Text
 
 **Always load the `/prose-craft` skill before writing ANY text for outside consumption** —
-GitHub issues, PR descriptions, design docs, Slack messages, emails, blog posts,
-documentation aimed at external readers.
+GitHub issues, PR descriptions, design docs, Slack messages, emails, blog posts, and
+any documentation with readers beyond myself (brag docs, runbooks, guides).
 
 # Multiline Commands
 
