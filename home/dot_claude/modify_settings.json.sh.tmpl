@@ -9,6 +9,17 @@
 # chezmoi pipes the current target file contents to stdin.
 # We output the merged result to stdout.
 
+{{- if eq .chezmoi.os "windows" }}
+# Refresh PATH from Windows registry — winget installs (like jq) add PATH
+# entries that the current Git Bash session doesn't see yet.
+# Read the registry PATH (semicolon-delimited, backslash Windows paths) and
+# convert to Git Bash format (colon-delimited, /c/... Unix paths).
+FRESH_PATH=$(powershell.exe -NoProfile -Command \
+    '[Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")' \
+    2>/dev/null | tr -d '\r' | tr ';' '\n' | sed 's|\\|/|g; s|^\([A-Za-z]\):|/\L\1|' | paste -sd:)
+[ -n "$FRESH_PATH" ] && export PATH="$FRESH_PATH:$PATH"
+{{- end }}
+
 # Statusline path differs by OS — `~` expansion is unreliable on Windows
 # because Claude Code launches the command in its own shell, not Git Bash.
 {{- if eq .chezmoi.os "windows" }}
@@ -104,7 +115,8 @@ MANAGED='
   },
   "enabledPlugins": {
     "gopls-lsp@claude-plugins-official": true,
-    "caveman@caveman": true
+    "caveman@caveman": true,
+    "prose-craft@github:TimSimpsonJr/prose-craft": true
   },
   "extraKnownMarketplaces": {
     "caveman": {

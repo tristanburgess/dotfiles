@@ -6,6 +6,7 @@ $ErrorActionPreference = 'Continue'  # tolerate individual package failures
 
 # Bootstrap dependencies (needed before mise can run)
 $bootstrap = @(
+    'Microsoft.PowerShell',             # Update to latest
     'Git.Git',                          # Git for Windows (provides Git Bash)
     'twpayne.chezmoi',                  # chezmoi itself (idempotent)
     'Rustlang.Rustup',                  # Rust toolchain manager (MSVC host)

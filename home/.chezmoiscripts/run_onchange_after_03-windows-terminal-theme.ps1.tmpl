@@ -1,0 +1,146 @@
+{{- if eq .chezmoi.os "windows" -}}
+# Register Git Bash in Windows Terminal (fragment), add Adventure Time color
+# scheme, and apply it + JetBrainsMono Nerd Font to Git Bash and Ubuntu/WSL profiles.
+$ErrorActionPreference = 'Continue'
+
+# -- Register Git Bash via Windows Terminal fragment --
+# winget-installed Git for Windows doesn't always create this, so the
+# "Git Bash" profile may launch cmd.exe instead of bash.exe.
+$gitBashExe = 'C:\Program Files\Git\bin\bash.exe'
+if (Test-Path $gitBashExe) {
+    $fragmentDir = "$env:LOCALAPPDATA\Microsoft\Windows Terminal\Fragments\Git"
+    $fragmentFile = "$fragmentDir\git-bash.json"
+    if (-not (Test-Path $fragmentFile)) {
+        New-Item -ItemType Directory -Path $fragmentDir -Force | Out-Null
+        @'
+{
+    "profiles": [
+        {
+            "guid": "{2ece5bfe-50ed-5f3a-ab87-5cd4baafed2b}",
+            "name": "Git Bash",
+            "commandline": "C:\\Program Files\\Git\\bin\\bash.exe --login -i",
+            "icon": "C:\\Program Files\\Git\\mingw64\\share\\git\\git-for-windows.ico",
+            "startingDirectory": "%USERPROFILE%"
+        }
+    ]
+}
+'@ | Set-Content $fragmentFile -Encoding UTF8
+        Write-Host "Created Windows Terminal fragment for Git Bash"
+    } else {
+        Write-Host "Git Bash fragment already exists"
+    }
+}
+
+# -- Windows Terminal settings.json --
+$settingsPath = "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
+if (-not (Test-Path $settingsPath)) {
+    Write-Host "Windows Terminal settings.json not found - skipping theme setup"
+    exit 0
+}
+
+$settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+
+# -- Add Adventure Time scheme if missing --
+$schemeName = 'Adventure Time'
+$scheme = @{
+    name            = $schemeName
+    background      = '#1e1c44'
+    foreground      = '#f8dbc0'
+    cursorColor     = '#eebf37'
+    selectionBackground = '#6f6a4e'
+    black           = '#050404'
+    red             = '#bc0013'
+    green           = '#49b117'
+    yellow          = '#e6741d'
+    blue            = '#0f49c6'
+    purple          = '#665992'
+    cyan            = '#6fa497'
+    white           = '#f8dbc0'
+    brightBlack     = '#4e7bbf'
+    brightRed       = '#fc5e59'
+    brightGreen     = '#9dff6e'
+    brightYellow    = '#efc11a'
+    brightBlue      = '#1896c6'
+    brightPurple    = '#9a5952'
+    brightCyan      = '#c8f9f3'
+    brightWhite     = '#f5f4fb'
+}
+
+if (-not $settings.schemes) {
+    $settings | Add-Member -NotePropertyName 'schemes' -NotePropertyValue @()
+}
+$existing = $settings.schemes | Where-Object { $_.name -eq $schemeName }
+if (-not $existing) {
+    $settings.schemes += [PSCustomObject]$scheme
+    Write-Host "Added '$schemeName' color scheme to Windows Terminal"
+} else {
+    Write-Host "'$schemeName' scheme already exists in Windows Terminal"
+}
+
+# -- Helper: apply theme + font to a profile --
+$font = @{ face = 'JetBrainsMono Nerd Font'; size = 11 }
+
+function Apply-Theme($p) {
+    $p | Add-Member -NotePropertyName 'colorScheme' -NotePropertyValue $schemeName -Force
+    if (-not $p.font) {
+        $p | Add-Member -NotePropertyName 'font' -NotePropertyValue ([PSCustomObject]$font)
+    } else {
+        $p.font | Add-Member -NotePropertyName 'face' -NotePropertyValue $font.face -Force
+        $p.font | Add-Member -NotePropertyName 'size' -NotePropertyValue $font.size -Force
+    }
+    Write-Host "Applied '$schemeName' theme + JetBrainsMono to profile: $($p.name)"
+}
+
+$profiles = $settings.profiles.list
+$updated = $false
+
+# -- Apply to Ubuntu/WSL profile --
+foreach ($p in $profiles) {
+    if ($p.source -eq 'Windows.Terminal.Wsl' -or $p.name -match 'Ubuntu') {
+        Apply-Theme $p
+        $updated = $true
+    }
+}
+
+# -- Apply to Git Bash profile (fix commandline if broken) --
+$gitBashGuid = '{2ece5bfe-50ed-5f3a-ab87-5cd4baafed2b}'
+$gitBashFound = $false
+foreach ($p in $profiles) {
+    if ($p.name -match 'Git Bash' -or $p.guid -eq $gitBashGuid -or
+        ($p.commandline -and $p.commandline -match 'git.*bash')) {
+        # Fix broken commandline (auto-detected profiles sometimes point at cmd.exe)
+        if (Test-Path $gitBashExe) {
+            $correctCmd = "$gitBashExe --login -i"
+            if (-not $p.commandline -or $p.commandline -notmatch 'bash\.exe') {
+                $p | Add-Member -NotePropertyName 'commandline' -NotePropertyValue $correctCmd -Force
+                Write-Host "Fixed Git Bash profile commandline"
+            }
+        }
+        Apply-Theme $p
+        $gitBashFound = $true
+        $updated = $true
+    }
+}
+
+# If no Git Bash profile exists in settings.json, create an override entry
+# that matches the fragment GUID so theme/font apply to the fragment profile.
+if (-not $gitBashFound -and (Test-Path $gitBashExe)) {
+    $newProfile = [PSCustomObject]@{
+        guid        = $gitBashGuid
+        name        = 'Git Bash'
+        commandline = "$gitBashExe --login -i"
+        colorScheme = $schemeName
+        font        = [PSCustomObject]$font
+    }
+    $settings.profiles.list += $newProfile
+    $updated = $true
+    Write-Host "Created Git Bash profile in Windows Terminal settings"
+}
+
+if ($updated) {
+    $settings | ConvertTo-Json -Depth 20 | Set-Content $settingsPath -Encoding UTF8
+    Write-Host "Windows Terminal settings updated"
+} else {
+    Write-Host "No Ubuntu/WSL or Git Bash profiles found in Windows Terminal"
+}
+{{- end -}}

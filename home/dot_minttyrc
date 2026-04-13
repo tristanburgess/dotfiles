@@ -1,0 +1,29 @@
+# Adventure Time theme — matches kitty terminal colors
+Font=JetBrainsMono Nerd Font
+FontHeight=11
+FontSmoothing=default
+
+ForegroundColour=248,219,192
+BackgroundColour=30,28,68
+CursorColour=238,191,55
+
+Black=5,4,4
+Red=188,0,19
+Green=73,177,23
+Yellow=230,116,29
+Blue=15,73,198
+Magenta=102,89,146
+Cyan=111,164,151
+White=248,219,192
+
+BoldBlack=78,123,191
+BoldRed=252,94,89
+BoldGreen=157,255,110
+BoldYellow=239,193,26
+BoldBlue=24,150,198
+BoldMagenta=154,89,82
+BoldCyan=200,249,243
+BoldWhite=245,244,251
+
+Scrollbar=none
+Term=xterm-256color

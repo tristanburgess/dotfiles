@@ -63,9 +63,16 @@ Thin Windows-native layer for builds where filesystem-heavy operations (cargo, n
 
 **Prerequisites:** Windows 11 (or 10 build 19044+) with [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/).
 
-#### Step 1: Bootstrap
+#### Step 1: Bootstrap from PowerShell
+
+Run these in a **regular PowerShell window** (not Git Bash):
 
 ```powershell
+# Allow locally-created scripts to run — Windows ships with Restricted which
+# blocks all .ps1 execution. RemoteSigned is the standard dev-machine setting.
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# Install Git for Windows + chezmoi
 winget install Git.Git twpayne.chezmoi
 ```
 
