@@ -8,6 +8,9 @@ import { basename } from "path"
 
 // ─── ANSI helpers ────────────────────────────────────────────────────────────
 
+// HOME may not be set when Claude Code spawns bun on Windows (outside Git Bash).
+const HOME = process.env.HOME || process.env.USERPROFILE || ""
+
 const RESET = "\x1b[0m"
 const BOLD = "\x1b[1m"
 
@@ -32,7 +35,7 @@ function blueToRed(t) {
 
 function detectPlanType() {
     try {
-        const credsPath = `${process.env.HOME}/.claude/.credentials.json`
+        const credsPath = `${HOME}/.claude/.credentials.json`
         const creds = JSON.parse(readFileSync(credsPath, "utf8"))
         const sub = creds?.claudeAiOauth?.subscriptionType
         if (sub && sub !== "api") return "rate"
@@ -297,7 +300,7 @@ function buildRateIcons(fivePct, sevenPct) {
 // ─── Budget tracker (API / dollar-based plan) ─────────────────────────────────
 
 const MONTHLY_BUDGET = parseInt(process.env.CLAUDE_MONTHLY_BUDGET || "200", 10)
-const BUDGET_FILE = `${process.env.HOME}/.claude/budget-tracker.json`
+const BUDGET_FILE = `${HOME}/.claude/budget-tracker.json`
 const BUDGET_LOCK = `${BUDGET_FILE}.lock`
 const LOCK_STALE_MS = 2000
 const LOCK_TIMEOUT_MS = 3000
