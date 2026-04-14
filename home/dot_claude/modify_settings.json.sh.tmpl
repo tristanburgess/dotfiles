@@ -102,12 +102,15 @@ MANAGED='
       "Bash(*--no-verify*)"
     ]
   },
-  "model": "opus[1m]",
-  "effortLevel": "high",
+  "model": "opus",
+  "effortLevel": "max",
   "includeCoAuthoredBy": false,
   "gitAttribution": false,
   "env": {
-    "CLAUDE_CODE_SUBAGENT_MODEL": "haiku"
+    "CLAUDE_CODE_SUBAGENT_MODEL": "haiku",
+    "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1",
+    "MAX_THINKING_TOKENS": "63999",
+    "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1"
   },
   "statusLine": {
     "type": "command",
