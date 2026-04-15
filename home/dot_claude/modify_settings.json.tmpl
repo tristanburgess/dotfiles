@@ -208,4 +208,11 @@ fi
 
 # Recursive merge: start with current (preserves runtime keys),
 # then overlay managed keys on top (managed always wins).
-echo "$CURRENT" | jq --argjson managed "$MANAGED" '. * $managed'
+# The jq `*` operator merges objects recursively — extra keys in nested
+# objects (like `env`) survive even if the managed block doesn't contain
+# them.  After merging, delete any env keys that are NOT in the managed
+# block so stale runtime overrides don't persist across applies.
+echo "$CURRENT" | jq --argjson managed "$MANAGED" '
+  . * $managed
+  | .env = (.env // {} | to_entries | map(select(.key as $k | $managed.env | has($k))) | from_entries)
+'
