@@ -107,7 +107,8 @@ MANAGED='
   "includeCoAuthoredBy": false,
   "gitAttribution": false,
   "env": {
-    "CLAUDE_CODE_SUBAGENT_MODEL": "haiku"
+    "CLAUDE_CODE_SUBAGENT_MODEL": "haiku",
+    "CLAUDE_MONTHLY_BUDGET": "200"
   },
   "statusLine": {
     "type": "command",
@@ -208,11 +209,10 @@ fi
 
 # Recursive merge: start with current (preserves runtime keys),
 # then overlay managed keys on top (managed always wins).
-# The jq `*` operator merges objects recursively — extra keys in nested
-# objects (like `env`) survive even if the managed block doesn't contain
-# them.  After merging, delete any env keys that are NOT in the managed
-# block so stale runtime overrides don't persist across applies.
+# For env specifically: managed provides defaults, then local env is
+# overlaid on top so local overrides and additions are preserved.
 echo "$CURRENT" | jq --argjson managed "$MANAGED" '
-  . * $managed
-  | .env = (.env // {} | to_entries | map(select(.key as $k | $managed.env | has($k))) | from_entries)
+  . as $current
+  | . * $managed
+  | .env = ($managed.env * ($current.env // {}))
 '
