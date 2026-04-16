@@ -47,6 +47,17 @@ Rewriting (squash, edit, rebase) changes the git hash -> force-push. Since repos
 | `jj restore --from <rev> <path>` | Restore a file from a previous change |
 | `jj absorb` | Auto-distribute hunks in `@` into the ancestor that last touched those lines |
 
+## Starting new work
+
+**Always fetch first.** Local bookmarks (including `trunk()`) go stale instantly on fast-moving repos. Starting work on a stale base means your PR will include already-merged changes from other PRs.
+
+```bash
+jj git fetch
+jj new trunk() -m "description"
+```
+
+`trunk()` updates after fetch to track the remote. Alternatively, use the explicit remote ref (`main@origin`, `master@origin`). The key rule: never `jj new` onto a trunk ref without fetching first.
+
 ## Pushing changes
 
 **Always fetch before push.** jj caches the last-seen position of each remote bookmark. If the remote moved since your last fetch (CI merges, other contributors, Renovate PRs), push fails with "references unexpectedly moved on the remote." The fix is simple — make fetch-then-push a single habit:
@@ -85,3 +96,4 @@ gh pr create --head <bookmark-name> --base main --title "..." --body "..."
 - **Using `git` commands directly** — jj's git repo state can desync. Stick to `jj git *` subcommands for all git operations.
 - **`jj squash` into an immutable (pushed) commit** — fails because pushed commits are immutable. Add a new commit on top instead, move the bookmark, and push.
 - **Pushing without fetching first** — jj caches remote bookmark positions; if the remote moved since last fetch, push fails with "references unexpectedly moved." Always `jj git fetch` before `jj git push`.
+- **`jj new trunk()` on a stale local bookmark** — `trunk()` resolves to the local bookmark, which is a snapshot from your last fetch. On fast-moving repos, follow-on PRs will re-include already-merged changes. Always `jj git fetch` then use `trunk()` (which updates after fetch) or the explicit remote ref like `main@origin` / `master@origin`.
