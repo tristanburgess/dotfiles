@@ -105,8 +105,8 @@ async function buildJjSection() {
             "log", "-r", "@", "--no-graph", "-T",
             'change_id.shortest() ++ "\\n" ++ local_bookmarks.join(", ")'),
         runAsync("jj", "--ignore-working-copy", "-R", cwd, "--no-pager",
-            "log", "-r", "latest(ancestors(@-) & bookmarks())", "--no-graph", "-T",
-            'local_bookmarks.join(", ")'),
+            "log", "-r", "latest(ancestors(@-) & (trunk() | bookmarks()))", "--no-graph", "-T",
+            'if(local_bookmarks, local_bookmarks.join(", "), remote_bookmarks.map(|ref| ref.name()).join(", "))'),
         runAsync("jj", "--ignore-working-copy", "-R", cwd, "--no-pager", "diff", "--stat"),
     ])
 
@@ -116,7 +116,8 @@ async function buildJjSection() {
 
     let branch = changeId
     if (bookmarks) branch += ` (${bookmarks})`
-    if (ancestorBookmark) branch += ` on ${ancestorBookmark}`
+    // Don't show "on X" when X is already the current bookmark
+    if (ancestorBookmark && ancestorBookmark !== bookmarks) branch += ` on ${ancestorBookmark}`
 
     // Parse diff stats from last line: "N files changed, M insertions(+), K deletions(-)"
     let dirty = ""

@@ -47,9 +47,9 @@ jj --ignore-working-copy log -r @ --no-graph \
   -T 'change_id.shortest() ++ "\n" ++ local_bookmarks.join(" ")' \
   > "$tmpdir/at" 2>/dev/null &
 
-# Ancestor bookmark
-jj --ignore-working-copy log -r 'latest(ancestors(@-) & bookmarks())' --no-graph \
-  -T 'local_bookmarks.join(" ")' \
+# Ancestor bookmark (trunk() ensures remote master/main is considered even when local bookmark is stale)
+jj --ignore-working-copy log -r 'latest(ancestors(@-) & (trunk() | bookmarks()))' --no-graph \
+  -T 'if(local_bookmarks, local_bookmarks.join(" "), remote_bookmarks.map(|ref| ref.name()).join(" "))' \
   > "$tmpdir/base" 2>/dev/null &
 
 # Diff stats (takes working-copy lock)
@@ -65,6 +65,9 @@ id="$change_id"
 [ -n "$bookmarks" ] && id="$id $bookmarks"
 base=$(cat "$tmpdir/base")
 stats=$(tail -1 "$tmpdir/stats")
+
+# Don't show "on X" when X is already the current bookmark
+[ "$base" = "$bookmarks" ] && base=""
 
 out="${P} ${R}${G}${id}${R}"
 [ -n "$base" ] && out="${out}${G} on ${base}${R}"
