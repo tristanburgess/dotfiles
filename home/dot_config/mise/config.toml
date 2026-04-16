@@ -19,7 +19,7 @@ jujutsu = "0.40.0"
 neovim = "0.12.1"
 node = "lts"
 # renovate: packageName=rust-lang/rust datasource=github-releases
-rust = "1.94.1"
+rust = "1.95.0"
 # renovate: packageName=starship/starship datasource=github-releases
 starship = "1.24.2"
 # renovate: packageName=hashicorp/terraform datasource=github-releases
