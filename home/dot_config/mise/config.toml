@@ -7,7 +7,7 @@ claude-code = "2.1.112"
 # renovate: packageName=Wilfred/difftastic datasource=github-releases
 difftastic = "0.68.0"
 # renovate: packageName=cli/cli datasource=github-releases
-gh = "2.89.0"
+gh = "2.90.0"
 # renovate: go
 go = "1.26.2"
 java = "temurin-25.0.2+10.0.LTS"
