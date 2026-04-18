@@ -30,7 +30,7 @@ zoxide = "0.9.9"
 # ── Linux only ──
 # Chezmoi: bootstrapped by winget on Windows before mise exists
 # renovate: packageName=twpayne/chezmoi datasource=github-releases
-chezmoi = { version = "2.70.1", os = ["linux"] }
+chezmoi = { version = "2.70.2", os = ["linux"] }
 # Kitty: no Windows build (runs in WSL via WSLg)
 # renovate: packageName=kovidgoyal/kitty datasource=github-releases
 kitty = { version = "0.46.2", os = ["linux"] }
