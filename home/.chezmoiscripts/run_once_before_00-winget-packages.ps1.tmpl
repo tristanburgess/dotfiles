@@ -30,11 +30,35 @@ $desktopApps = @(
     'calibre.calibre'                    # e-reader (Calibre on both Windows and Linux)
 )
 
+# Map winget IDs to process names for apps that block installs while running
+$processNames = @{
+    'Spotify.Spotify'         = 'Spotify'
+    'SlackTechnologies.Slack' = 'slack'
+    'Discord.Discord'         = 'Discord'
+    'Zoom.Zoom'               = 'Zoom'
+    'Notion.Notion'           = 'Notion'
+    'Anthropic.Claude'        = 'Claude'
+}
+
 $packages = $bootstrap + $cloudCLIs + $desktopApps
 
 foreach ($pkg in $packages) {
     $installed = winget list --id $pkg --exact 2>$null | Select-String $pkg
     if (-not $installed) {
+        # Prompt to close running app if it would block the installer
+        if ($processNames.ContainsKey($pkg)) {
+            $proc = Get-Process -Name $processNames[$pkg] -ErrorAction SilentlyContinue
+            if ($proc) {
+                $answer = Read-Host "$($processNames[$pkg]) is running and must be closed to install/update. Close it? (y/n)"
+                if ($answer -eq 'y') {
+                    $proc | Stop-Process -Force
+                    Start-Sleep -Seconds 2
+                } else {
+                    Write-Host "Skipping $pkg (app still running)"
+                    continue
+                }
+            }
+        }
         Write-Host "Installing $pkg..."
         try {
             winget install --exact --id $pkg `
