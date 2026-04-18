@@ -29,6 +29,7 @@ bin/toggle-dnd.sh
 {{ if ne .chezmoi.os "windows" }}
 # ─── Linux/WSL: hide Windows-only target files ───
 .minttyrc
+.bashrc
 {{ end }}
 
 {{ if and (eq .chezmoi.os "linux") $isWSL }}

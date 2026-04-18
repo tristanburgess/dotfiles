@@ -6,6 +6,17 @@
   },
   "customManagers": [
     {
+      "description": "Handles mise tools with explicit # renovate: packageName=... datasource=... annotations. Built-in mise manager ignores those annotations, so tools it can't resolve natively (e.g. claude-code) would otherwise never update. If duplicate PRs appear for tools the built-in mise manager also handles, add a packageRules entry disabling the mise manager for the annotated tools and leave them to this regex only. Defer until observed.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/home/dot_config/mise/config\\.toml$/"
+      ],
+      "matchStrings": [
+        "# renovate: packageName=(?<packageName>[^\\s]+) datasource=(?<datasource>[^\\s]+)\\n[\\w-]+ = \"(?<currentValue>[^\"]+)\"",
+        "# renovate: packageName=(?<packageName>[^\\s]+) datasource=(?<datasource>[^\\s]+)\\n[\\w-]+ = \\{\\s*version\\s*=\\s*\"(?<currentValue>[^\"]+)\""
+      ]
+    },
+    {
       "customType": "regex",
       "managerFilePatterns": [
         "/home/\\.chezmoiscripts/run_onchange_after_04-claude-desktop\\.sh$/"

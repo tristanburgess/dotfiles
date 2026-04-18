@@ -1,0 +1,22 @@
+{{- if eq .chezmoi.os "windows" -}}
+# Copy jj config to %APPDATA%\jj\ where jj actually looks on Windows.
+# chezmoi deploys to ~/.config/jj/ (XDG), but Windows jj uses APPDATA.
+# Hash of source template (triggers re-run on change):
+# {{ include (joinPath .chezmoi.sourceDir "dot_config/jj/config.toml.tmpl") | sha256sum }}
+
+$src = Join-Path $env:USERPROFILE ".config\jj\config.toml"
+$dst = Join-Path $env:APPDATA "jj\config.toml"
+
+if (-not (Test-Path $src)) {
+    Write-Warning "Source jj config not found at $src - skipping"
+    exit 0
+}
+
+$dstDir = Split-Path $dst -Parent
+if (-not (Test-Path $dstDir)) {
+    New-Item -ItemType Directory -Path $dstDir -Force | Out-Null
+}
+
+Copy-Item -Path $src -Destination $dst -Force
+Write-Host "Copied jj config to $dst"
+{{- end -}}

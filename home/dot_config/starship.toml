@@ -47,8 +47,8 @@ jj --ignore-working-copy log -r @ --no-graph \
   -T 'change_id.shortest() ++ "\n" ++ local_bookmarks.join(" ")' \
   > "$tmpdir/at" 2>/dev/null &
 
-# Ancestor bookmark (trunk() ensures remote master/main is considered even when local bookmark is stale)
-jj --ignore-working-copy log -r 'latest(ancestors(@-) & (trunk() | bookmarks()))' --no-graph \
+# Ancestor bookmark, or nearest descendant bookmark if @ is behind trunk
+jj --ignore-working-copy log -r 'latest(ancestors(@-) & (trunk() | bookmarks())) | latest(heads(bookmarks() & @-::) ~ @)' --no-graph \
   -T 'if(local_bookmarks, local_bookmarks.join(" "), remote_bookmarks.map(|ref| ref.name()).join(" "))' \
   > "$tmpdir/base" 2>/dev/null &
 

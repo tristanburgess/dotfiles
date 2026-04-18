@@ -1,0 +1,116 @@
+{{- if eq .chezmoi.os "windows" -}}
+# Windows-only winget installer.
+# chezmoi runs .ps1 natively on Windows via PowerShell — no [interpreters] needed.
+# Body-wrapped so this file is a no-op on Linux/macOS.
+$ErrorActionPreference = 'Continue'  # tolerate individual package failures
+
+# Bootstrap dependencies (needed before mise can run)
+$bootstrap = @(
+    'Microsoft.PowerShell',             # Update to latest
+    'Git.Git',                          # Git for Windows (provides Git Bash)
+    'twpayne.chezmoi',                  # chezmoi itself (idempotent)
+    'jdx.mise'                          # mise tool manager
+)
+
+# Cloud CLIs — installed via winget on both platforms for consistency
+$cloudCLIs = @(
+    'Amazon.AWSCLI',
+    'Microsoft.AzureCLI',
+    'Google.CloudSDK'
+)
+
+# Desktop apps — Windows-native equivalents of Linux snap/deb packages
+$desktopApps = @(
+    'Anthropic.Claude',                 # Claude Desktop (replaces .deb on Linux)
+    'SlackTechnologies.Slack',
+    'Spotify.Spotify',
+    'Notion.Notion',
+    'Discord.Discord',
+    'Zoom.Zoom',
+    'calibre.calibre'                    # e-reader (Calibre on both Windows and Linux)
+)
+
+# Map winget IDs to process names for apps that block installs while running
+$processNames = @{
+    'Spotify.Spotify'         = @('Spotify', 'SpotifyLauncher')
+    'SlackTechnologies.Slack' = 'slack'
+    'Discord.Discord'         = 'Discord'
+    'Zoom.Zoom'               = 'Zoom'
+    'Notion.Notion'           = 'Notion'
+    'Anthropic.Claude'        = 'Claude'
+}
+
+# Packages that can't be upgraded while chezmoi apply is running.
+# Git.Git: Git Bash is the shell running chezmoi — upgrading kills the session.
+# twpayne.chezmoi: chezmoi.exe is locked by the running process.
+$skipUpgrade = @('Git.Git', 'twpayne.chezmoi')
+$deferredUpgrades = @()
+
+function Close-AppIfRunning($pkg) {
+    if (-not $processNames.ContainsKey($pkg)) { return $true }
+    $names = @($processNames[$pkg])
+    $proc = Get-Process -Name $names -ErrorAction SilentlyContinue
+    if (-not $proc) { return $true }
+    $running = ($proc | Select-Object -ExpandProperty Name -Unique) -join ', '
+    $answer = Read-Host "$running is running and must be closed to install/update $pkg. Close it? (y/n)"
+    if ($answer -eq 'y') {
+        $proc | Stop-Process -Force
+        Start-Sleep -Seconds 2
+        return $true
+    }
+    return $false
+}
+
+$packages = $bootstrap + $cloudCLIs + $desktopApps
+
+foreach ($pkg in $packages) {
+    $installed = winget list --id $pkg --exact 2>$null | Select-String $pkg
+    if (-not $installed) {
+        # New install
+        if (-not (Close-AppIfRunning $pkg)) {
+            Write-Host "Skipping $pkg (app still running)"
+            continue
+        }
+        Write-Host "Installing $pkg..."
+        try {
+            winget install --exact --id $pkg `
+                --accept-package-agreements `
+                --accept-source-agreements --silent
+        } catch {
+            Write-Warning "Failed to install ${pkg}: $_"
+        }
+    } else {
+        # Check for available upgrade
+        $upgrade = winget upgrade --id $pkg --exact 2>$null | Select-String $pkg
+        if ($upgrade) {
+            if ($pkg -in $skipUpgrade) {
+                Write-Host "$pkg upgrade available but cannot upgrade during chezmoi apply (file locked)"
+                $deferredUpgrades += $pkg
+                continue
+            }
+            if (-not (Close-AppIfRunning $pkg)) {
+                Write-Host "Skipping upgrade of $pkg (app still running)"
+                continue
+            }
+            Write-Host "Upgrading $pkg..."
+            try {
+                winget upgrade --exact --id $pkg `
+                    --accept-package-agreements `
+                    --accept-source-agreements --silent
+            } catch {
+                Write-Warning "Failed to upgrade ${pkg}: $_"
+            }
+        } else {
+            Write-Host "$pkg up to date"
+        }
+    }
+}
+
+if ($deferredUpgrades.Count -gt 0) {
+    Write-Host ""
+    Write-Host "=== Deferred upgrades (run manually after closing Git Bash) ==="
+    foreach ($pkg in $deferredUpgrades) {
+        Write-Host "  winget upgrade --exact --id $pkg"
+    }
+}
+{{- end -}}

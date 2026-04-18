@@ -1,0 +1,59 @@
+{{- if eq .chezmoi.os "windows" -}}
+# Managed by chezmoi — edit home/dot_bashrc.tmpl, then `chezmoi apply`.
+# Windows Git Bash only. Linux/WSL uses the distro .bashrc + shell-integrations script.
+
+# ── PATH normalization ────────────────────────────────────────────────────
+# MSYS2 usually converts Windows PATH to Unix form on launch, but some
+# configurations leave mixed `C:\foo;D:\bar` segments that break resolution.
+if [[ ":$PATH:" != *":/usr/bin:"* ]]; then
+    PATH="/mingw64/bin:/usr/local/bin:/usr/bin:/bin:${PATH}"
+fi
+if [[ "$PATH" == *";"* ]]; then
+    PATH="${PATH//;/:}"
+fi
+if [[ "$PATH" == *\\* ]]; then
+    PATH=$(printf '%s' "$PATH" | tr '\\' '/')
+fi
+PATH="${PATH//C://c}"
+PATH="${PATH//D://d}"
+
+# ── mise shims (not `mise activate`) ──────────────────────────────────────
+# `mise activate bash` mangles PATH on Windows Git Bash: the native Windows
+# mise.exe emits PATH in Windows format (`C:\...;...`), MSYS2 re-converts on
+# each PROMPT_COMMAND, and drive-letter colons collide with PATH separators.
+# Static shim dir on PATH avoids the hook entirely.
+export PATH="$HOME/.local/bin:$LOCALAPPDATA/mise/shims:$PATH"
+
+# ── Go ────────────────────────────────────────────────────────────────────
+if command -v go &>/dev/null; then
+    export PATH="$(go env GOPATH)/bin:$PATH"
+fi
+
+# ── Environment ───────────────────────────────────────────────────────────
+export CLAUDE_HOME="$HOME/.claude"
+
+# ── Completions ───────────────────────────────────────────────────────────
+eval "$(gh completion -s bash)"
+source <(jj util completion bash)
+
+# ── SSH agent (persistent across terminals until logout/reboot) ───────────
+SSH_ENV="$HOME/.ssh/agent.env"
+start_ssh_agent() {
+    eval "$(ssh-agent -s)" > /dev/null
+    printf "export SSH_AUTH_SOCK=%s\nexport SSH_AGENT_PID=%s\n" "$SSH_AUTH_SOCK" "$SSH_AGENT_PID" > "$SSH_ENV"
+    chmod 600 "$SSH_ENV"
+}
+if [[ -f "$SSH_ENV" ]]; then
+    . "$SSH_ENV" > /dev/null
+    kill -0 "$SSH_AGENT_PID" 2>/dev/null || start_ssh_agent
+else
+    start_ssh_agent
+fi
+ssh-add -l &>/dev/null || ssh-add 2>/dev/null
+
+# ── Prompt + shell integrations (MUST BE LAST) ────────────────────────────
+# Starship prompt first, zoxide last — zoxide hooks PROMPT_COMMAND and warns
+# if anything else hooks after it.
+eval "$(starship init bash)"
+eval "$(zoxide init bash)"
+{{ end -}}

@@ -2,46 +2,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# Set up Git Bash ~/.bashrc with shell integrations.
-# Windows-only — the Linux equivalent is run_onchange_after_03-shell-integrations.sh.tmpl.
+# Windows-only: ensure ~/.local/bin is in the Windows user PATH (used by
+# Claude Code's native installer and other non-bash shells like PowerShell).
+# Bash-side PATH setup lives in home/dot_bashrc.tmpl, not here.
 
-add_line() {
-    local marker="$1" line="$2"
-    if ! grep -qF "$marker" "$HOME/.bashrc" 2>/dev/null; then
-        echo "$line" >> "$HOME/.bashrc"
-    fi
-}
-
-touch "$HOME/.bashrc"
-add_line '.local/bin'          'export PATH="$HOME/.local/bin:$PATH"'
-add_line 'mise activate bash'  'eval "$(mise activate bash)"'
-add_line 'zoxide init bash'    'eval "$(zoxide init bash)"'
-add_line 'starship init bash'  'eval "$(starship init bash)"'
-add_line 'GOPATH.*bin'         'export PATH="$(go env GOPATH)/bin:$PATH"'
-add_line 'gh completion'       'eval "$(gh completion -s bash)"'
-add_line 'jj util completion'  'source <(jj util completion bash)'
-add_line 'CLAUDE_HOME'         'export CLAUDE_HOME="$HOME/.claude"'
-
-# SSH agent - persist across Git Bash windows.
-# Passphrase prompted once, then cached until logout/reboot.
-add_line 'ssh-agent' '
-# SSH agent (persistent across terminal windows)
-SSH_ENV="$HOME/.ssh/agent.env"
-start_ssh_agent() {
-    eval "$(ssh-agent -s)" > /dev/null
-    printf "export SSH_AUTH_SOCK=%s\nexport SSH_AGENT_PID=%s\n" "$SSH_AUTH_SOCK" "$SSH_AGENT_PID" > "$SSH_ENV"
-    chmod 600 "$SSH_ENV"
-}
-if [[ -f "$SSH_ENV" ]]; then
-    . "$SSH_ENV" > /dev/null
-    kill -0 "$SSH_AGENT_PID" 2>/dev/null || start_ssh_agent
-else
-    start_ssh_agent
-fi
-ssh-add -l &>/dev/null || ssh-add 2>/dev/null'
-
-# Ensure ~/.local/bin is in Windows user PATH (Claude Code native install location).
-# This makes `claude` available in PowerShell, Windows Terminal, and other non-bash shells.
 LOCAL_BIN="$USERPROFILE\\.local\\bin"
 if ! powershell.exe -NoProfile -Command \
     "[Environment]::GetEnvironmentVariable('Path','User')" 2>/dev/null \
