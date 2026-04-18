@@ -105,7 +105,7 @@ async function buildJjSection() {
             "log", "-r", "@", "--no-graph", "-T",
             'change_id.shortest() ++ "\\n" ++ local_bookmarks.join(", ")'),
         runAsync("jj", "--ignore-working-copy", "-R", cwd, "--no-pager",
-            "log", "-r", "latest(ancestors(@-) & (trunk() | bookmarks()))", "--no-graph", "-T",
+            "log", "-r", "latest(ancestors(@-) & (trunk() | bookmarks())) | latest(heads(bookmarks() & @-::) ~ @)", "--no-graph", "-T",
             'if(local_bookmarks, local_bookmarks.join(", "), remote_bookmarks.map(|ref| ref.name()).join(", "))'),
         runAsync("jj", "--ignore-working-copy", "-R", cwd, "--no-pager", "diff", "--stat"),
     ])
