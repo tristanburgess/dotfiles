@@ -37,13 +37,12 @@ truth.
 │ + MCP:              │   │ + Project files          │
 │   notion            │   │ + Notion connector       │
 │   filesystem        │   │   (read/write DBs)       │
-│   calibre           │   │ (no MCP, no skills,      │
-│ + Project files     │   │  no filesystem)          │
-│ + Claude Code CLI   │   │                          │
+│ + Project files     │   │ (no MCP, no skills,      │
+│ + Claude Code CLI   │   │  no filesystem)          │
 │   with guitar-      │   │                          │
 │   library skill     │   │                          │
 └───┬─────────────────┘   └──────────────────────────┘
-    │ filesystem / calibre MCP (laptop only)
+    │ filesystem MCP + calibredb CLI (laptop only)
 ┌───▼───────────────────────────┐
 │ Calibre library (OneDrive)     │
 │ ~/OneDrive/Documents/books/    │
@@ -55,8 +54,8 @@ truth.
 
 | Surface | Projects | MCP | Cloud connectors | Skills | Can open PDFs | Can preprocess library |
 |---|---|---|---|---|---|---|
-| Claude Desktop (laptop) | yes | notion, filesystem, calibre | yes | no | yes (via Project files + filesystem MCP) | no (use Claude Code) |
-| Claude Code CLI (laptop) | no | notion, filesystem, calibre | yes | yes (`guitar-library`) | yes (via filesystem) | yes |
+| Claude Desktop (laptop) | yes | notion, filesystem | yes | no | yes (via Project files + filesystem MCP) | no (use Claude Code) |
+| Claude Code CLI (laptop) | no | notion, filesystem | yes | yes (`guitar-library`) | yes (via filesystem) | yes (calibredb CLI) |
 | Claude mobile app | yes | none | yes (notion) | no | Project files only, no arbitrary filesystem | no |
 | claude.ai web | yes | none | yes (notion) | no | Project files only | no |
 
@@ -160,9 +159,9 @@ All installs are in `home/.chezmoiscripts/`:
 - `run_after_00-winget-packages.ps1.tmpl` — Windows winget packages
   (calibre, tesseract-ocr, QPDF, etc.).
 - `run_onchange_after_10-claude-desktop-mcp.sh.tmpl` — merges the
-  `filesystem` and `calibre` MCP servers into
-  `claude_desktop_config.json` (merge, not overwrite — existing
-  servers like `notion` are preserved).
+  `filesystem` MCP server into `claude_desktop_config.json`
+  (merge, not overwrite — existing servers like `notion` are preserved).
+  Calibre is accessed via `calibredb` CLI, not MCP.
 - `home/dot_config/mise/config.toml` — cross-platform tool versions
   (uv, node, bun, jq, etc.).
 

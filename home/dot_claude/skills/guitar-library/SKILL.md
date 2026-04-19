@@ -17,10 +17,11 @@ session structure, and Practice Log writes live in the Music Project's
 Custom Instructions (Claude Desktop + mobile). Don't duplicate them
 here.
 
-**Surface:** Claude Code CLI on the laptop. Requires `filesystem`,
-`calibre`, and `notion` MCP servers (installed via the dotfiles
-`run_onchange_after_10-claude-desktop-mcp.sh.tmpl` + inherited by Claude
-Code). Mobile and claude.ai web cannot run any workflow here.
+**Surface:** Claude Code CLI on the laptop. Requires `filesystem` and
+`notion` MCP servers. Calibre is accessed via the `calibredb` CLI
+(`C:\Program Files\Calibre2\calibredb.exe` on Windows, `calibredb` on
+Linux — installed by dotfiles winget/apt scripts). Mobile and claude.ai
+web cannot run any workflow here.
 
 ## Hard caps (design constraints)
 
@@ -81,8 +82,8 @@ Purpose: reconcile Calibre with the Materials DB (`Type=Book` rows
 only). Creates stub rows for new books and marks rows stale when the
 underlying file changed.
 
-1. `calibre.search(tag='guitar OR sheet-music')` → list of `{id, title,
-   authors, path, formats}`.
+1. `calibredb list --for-machine --fields id,title,authors,formats,tags \
+   --search "tag:guitar OR tag:sheet-music"` → JSON list of books.
 2. For each Calibre row, find Materials DB row where `Type=Book` AND
    `Calibre ID` matches.
 3. Missing → create stub row with `Type=Book`, `Text layer=Unknown`,

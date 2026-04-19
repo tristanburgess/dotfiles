@@ -6,7 +6,6 @@
 #
 # MCP servers wired:
 #   filesystem  — read-only access to the Calibre library folder
-#   calibre     — sandraschi/calibremcp via uvx (SQLite-backed, no content server needed)
 #
 # Existing keys (preferences, other mcpServers) preserved.
 
@@ -27,14 +26,6 @@ CONFIG_DIR="{{ $home }}/.config/Claude"
 CONFIG_FILE="${CONFIG_DIR}/claude_desktop_config.json"
 BOOKS_PATH="{{ $home }}/OneDrive/Documents/books"
 
-{{- if eq .chezmoi.os "windows" }}
-# Claude Desktop on Windows spawns processes with the system PATH, not mise shims.
-# Use the full path to uvx so the calibre MCP server can be found.
-UVX="{{ $home }}/AppData/Local/mise/shims/uvx.exe"
-{{- else }}
-UVX="uvx"
-{{- end }}
-
 # Guard: if jq isn't ready, bail cleanly (chezmoi will retry next apply).
 if ! command -v jq >/dev/null 2>&1; then
   echo "jq not found — skipping Claude Desktop MCP config merge"
@@ -44,19 +35,12 @@ fi
 mkdir -p "$CONFIG_DIR"
 [ -f "$CONFIG_FILE" ] || echo '{}' > "$CONFIG_FILE"
 
-MANAGED=$(jq -n --arg books "$BOOKS_PATH" --arg uvx "$UVX" '
+MANAGED=$(jq -n --arg books "$BOOKS_PATH" '
 {
   mcpServers: {
     filesystem: {
       command: "npx",
       args: ["-y", "@modelcontextprotocol/server-filesystem", $books]
-    },
-    calibre: {
-      command: $uvx,
-      args: ["calibre-mcp"],
-      env: {
-        CALIBRE_LIBRARY_PATH: $books
-      }
     }
   }
 }')

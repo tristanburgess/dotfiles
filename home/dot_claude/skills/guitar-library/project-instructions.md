@@ -125,8 +125,8 @@ active-set constraint — they live on the user's own tools.
 
 ## Surface availability
 
-- **Claude Desktop (laptop):** Projects + MCP (notion, filesystem,
-  calibre) + cloud connectors. Full access.
+- **Claude Desktop (laptop):** Projects + MCP (notion, filesystem) +
+  cloud connectors. Full access.
 - **Claude mobile app:** Projects + Notion cloud connector only. No
   filesystem / calibre MCP, no skills. Read/write Notion fine;
   can't open PDFs directly.
