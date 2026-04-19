@@ -14,6 +14,12 @@ set -euo pipefail
 
 {{- if eq .chezmoi.os "windows" }}
 CONFIG_DIR="${APPDATA}/Claude"
+# chezmoi on Windows spawns scripts with a minimal PATH; mise shims are absent.
+# $LOCALAPPDATA is always set; cygpath converts the Windows path for bash.
+if [[ -n "${LOCALAPPDATA:-}" ]] && command -v cygpath >/dev/null 2>&1; then
+  _mise_shims="$(cygpath "$LOCALAPPDATA")/mise/shims"
+  [[ -d "$_mise_shims" ]] && export PATH="$_mise_shims:$PATH"
+fi
 {{- else }}
 CONFIG_DIR="{{ $home }}/.config/Claude"
 {{- end }}
