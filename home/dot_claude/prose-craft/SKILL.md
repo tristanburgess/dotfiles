@@ -119,7 +119,7 @@ Every piece needs a deliberate first move. Pick one:
 
 ### Naming
 
-When introducing a pattern or concept, name it in 2-4 words before explaining it. Named concepts travel. Unnamed concepts don't.
+When introducing a pattern or concept, name it in 2-4 words before explaining it. Named concepts travel. Unnamed concepts don't. In design proposals, name options by their *mechanism* (what they do) rather than their *implementation* (where they run or how they're installed). Mechanism names stay portable as implementations change.
 
 **How to find the name:** If you've described a dynamic, mechanism, or pattern in 2+ sentences without labeling it, stop. The name is hiding in the description. Look for what the thing does or what it feels like. The name compresses the description into something portable. If you can't name it, you might not understand it well enough yet.
 
