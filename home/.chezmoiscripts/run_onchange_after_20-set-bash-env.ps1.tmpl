@@ -1,0 +1,24 @@
+{{- if eq .chezmoi.os "windows" -}}
+{{- $home := .chezmoi.homeDir | replace "\\" "/" -}}
+# Set BASH_ENV so non-interactive Git Bash shells (editor terminals, external
+# tools like Claude Code) source the SSH agent env and can reach the persistent
+# ssh-agent started by .bashrc — without needing SSH_AUTH_SOCK inherited from
+# an interactive terminal.
+$ErrorActionPreference = 'Stop'
+
+# Convert Windows path to POSIX form Git Bash understands (C:/foo → /c/foo).
+$winPath = "{{ $home }}/.config/bash/noninteractive.sh"
+if ($winPath -match '^([A-Za-z]):(.*)') {
+    $posixPath = '/' + $Matches[1].ToLower() + $Matches[2]
+} else {
+    $posixPath = $winPath
+}
+
+$current = [Environment]::GetEnvironmentVariable("BASH_ENV", "User")
+if ($current -ne $posixPath) {
+    [Environment]::SetEnvironmentVariable("BASH_ENV", $posixPath, "User")
+    Write-Host "Set BASH_ENV=$posixPath"
+} else {
+    Write-Host "BASH_ENV already set correctly"
+}
+{{- end -}}
