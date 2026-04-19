@@ -29,6 +29,10 @@ $desktopApps = @(
     'Zoom.Zoom',
     'calibre.calibre'                    # e-reader (Calibre on both Windows and Linux)
 )
+# PDF tooling
+$pdfTools = @(
+    'QPDF.QPDF'                         # qpdf — PDF splitter/repair/linearize
+)
 
 # Map winget IDs to process names for apps that block installs while running
 $processNames = @{
@@ -61,7 +65,7 @@ function Close-AppIfRunning($pkg) {
     return $false
 }
 
-$packages = $bootstrap + $cloudCLIs + $desktopApps
+$packages = $bootstrap + $cloudCLIs + $desktopApps + $pdfTools
 
 foreach ($pkg in $packages) {
     $installed = winget list --id $pkg --exact 2>$null | Select-String $pkg

@@ -1,0 +1,54 @@
+{{- if eq .chezmoi.os "windows" -}}
+# Ghostscript installer for Windows — fetches latest Artifex release from GitHub.
+# Idempotent: skips install if `gswin64c` already on PATH.
+
+$ErrorActionPreference = 'Stop'
+
+if (Get-Command gswin64c -ErrorAction SilentlyContinue) {
+    Write-Host "Ghostscript already installed: $((gswin64c --version) 2>&1)"
+    return
+}
+
+Write-Host "Fetching latest Ghostscript release metadata..."
+try {
+    $release = Invoke-RestMethod `
+        -Uri 'https://api.github.com/repos/ArtifexSoftware/ghostpdl-downloads/releases/latest' `
+        -Headers @{ 'User-Agent' = 'chezmoi-gs-installer' }
+} catch {
+    Write-Warning "Failed to query GitHub API: $_"
+    Write-Warning "Install manually: https://www.ghostscript.com/releases/gsdnld.html"
+    return
+}
+
+# Windows 64-bit installer asset — pattern: gs<ver>w64.exe
+$asset = $release.assets | Where-Object { $_.name -match '^gs\d+w64\.exe$' } | Select-Object -First 1
+if (-not $asset) {
+    Write-Warning "No Windows 64-bit installer found in release $($release.tag_name)"
+    return
+}
+
+$dl = Join-Path $env:TEMP $asset.name
+Write-Host "Downloading $($asset.name) ($([math]::Round($asset.size/1MB,1)) MB)..."
+Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $dl -UseBasicParsing
+
+Write-Host "Installing silently..."
+$proc = Start-Process -FilePath $dl -ArgumentList '/S' -Wait -PassThru
+if ($proc.ExitCode -ne 0) {
+    Write-Warning "Installer exit code $($proc.ExitCode)"
+}
+Remove-Item $dl -Force -ErrorAction SilentlyContinue
+
+# Installer typically places files in C:\Program Files\gs\gs<ver>\bin — add to PATH if missing
+$gsDir = Get-ChildItem 'C:\Program Files\gs' -Directory -ErrorAction SilentlyContinue |
+    Sort-Object Name -Descending | Select-Object -First 1
+if ($gsDir) {
+    $binPath = Join-Path $gsDir.FullName 'bin'
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    if ($userPath -notlike "*$binPath*") {
+        [Environment]::SetEnvironmentVariable('Path', "$userPath;$binPath", 'User')
+        Write-Host "Added $binPath to User PATH (restart shell)"
+    }
+}
+
+Write-Host "Ghostscript installed."
+{{- end -}}
