@@ -1,0 +1,61 @@
+{{- /* Normalize home dir to forward slashes for JSON safety. */ -}}
+{{- $home := replace "\\" "/" .chezmoi.homeDir -}}
+#!/usr/bin/env bash
+# Merge MCP server entries into Claude Desktop's claude_desktop_config.json.
+# Runs in bash on Linux and Git Bash on Windows. Idempotent.
+#
+# MCP servers wired:
+#   filesystem  — read-only access to the Calibre library folder
+#   calibre     — sandraschi/calibremcp via uvx (SQLite-backed, no content server needed)
+#
+# Existing keys (preferences, other mcpServers) preserved.
+
+set -euo pipefail
+
+{{- if eq .chezmoi.os "windows" }}
+CONFIG_DIR="${APPDATA}/Claude"
+{{- else }}
+CONFIG_DIR="{{ $home }}/.config/Claude"
+{{- end }}
+
+CONFIG_FILE="${CONFIG_DIR}/claude_desktop_config.json"
+BOOKS_PATH="{{ $home }}/OneDrive/Documents/books"
+
+# Guard: if jq isn't ready, bail cleanly (chezmoi will retry next apply).
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq not found — skipping Claude Desktop MCP config merge"
+  exit 0
+fi
+
+mkdir -p "$CONFIG_DIR"
+[ -f "$CONFIG_FILE" ] || echo '{}' > "$CONFIG_FILE"
+
+MANAGED=$(jq -n --arg books "$BOOKS_PATH" '
+{
+  mcpServers: {
+    filesystem: {
+      command: "npx",
+      args: ["-y", "@modelcontextprotocol/server-filesystem", $books]
+    },
+    calibre: {
+      command: "uvx",
+      args: ["calibre-mcp"],
+      env: {
+        CALIBRE_LIBRARY_PATH: $books
+      }
+    }
+  }
+}')
+
+CURRENT=$(cat "$CONFIG_FILE")
+
+# Recursive merge: current first (preserves preferences + any other MCP servers),
+# then managed overlays on top.
+MERGED=$(echo "$CURRENT" | jq --argjson managed "$MANAGED" '. * $managed')
+
+if [ "$CURRENT" != "$MERGED" ]; then
+  echo "$MERGED" | jq . > "$CONFIG_FILE"
+  echo "Updated $CONFIG_FILE"
+else
+  echo "Claude Desktop MCP config already up to date"
+fi
