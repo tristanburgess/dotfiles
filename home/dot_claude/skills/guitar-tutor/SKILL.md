@@ -336,6 +336,31 @@ Per subagent:
 4. Set `Indexed=true`, `Last indexed=today`. Leave `Usage guides`
    untouched — those are user-curated.
 
+### Final step: Promote parts to parent (split books only)
+
+After all parts of a split book are `Indexed=true`, the parent row
+must be aggregated so the catalog view sees the book as one entity
+with full metadata. Coach recommendations target parent rows; parts
+are upload artifacts.
+
+For each parent row where `Cap status=Split`, `Parent book` is empty,
+and all linked parts are `Indexed=true`:
+
+1. **Topics** (multi-select) → union of parts' Topics.
+2. **Skill level** (single-select):
+   - All parts same level → that level.
+   - Mixed levels (or any part is `mixed`) → `mixed`.
+3. **Primary tag** (multi-select) → union of parts' Primary tag.
+4. **Summary** → composed paragraph: 1–2 sentences naming author +
+   what the whole book covers, then a brief "Split into N parts:
+   …" sentence describing each part's scope.
+5. **Indexed** → `__YES__`, **Last indexed** → today.
+
+Idempotent: re-running this step on an already-promoted parent
+overwrites with the current part state. Do not touch parent's
+`File path` / `Pages` / `Size MB` — those still describe the
+canonical pre-split file.
+
 ### Allowed Topics vocabulary (35 terms)
 
 `slurs`, `right-hand arpeggios`, `scales`, `sight reading`,
