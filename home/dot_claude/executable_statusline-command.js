@@ -99,13 +99,16 @@ async function buildJjSection() {
     }).exitCode === 0
     if (!isRepo) return null
 
-    // Run all jj calls in parallel: combined (ID + bookmarks), ancestor bookmark, diff stat
-    const [atOut, ancestorBookmark, diffStat] = await Promise.all([
+    // Run all jj calls in parallel: combined (ID + bookmarks), ancestor bookmark, descendant bookmark, diff stat
+    const [atOut, rawAncestor, rawDescendant, diffStat] = await Promise.all([
         runAsync("jj", "--ignore-working-copy", "-R", cwd, "--no-pager",
             "log", "-r", "@", "--no-graph", "-T",
             'change_id.shortest() ++ "\\n" ++ local_bookmarks.join(", ")'),
         runAsync("jj", "--ignore-working-copy", "-R", cwd, "--no-pager",
-            "log", "-r", "latest(ancestors(@-) & (trunk() | bookmarks())) | latest(heads(bookmarks() & @-::) ~ @)", "--no-graph", "-T",
+            "log", "-r", "latest(ancestors(@-) & (trunk() | bookmarks()))", "--no-graph", "-T",
+            'if(local_bookmarks, local_bookmarks.join(", "), remote_bookmarks.map(|ref| ref.name()).join(", "))'),
+        runAsync("jj", "--ignore-working-copy", "-R", cwd, "--no-pager",
+            "log", "-r", "latest(heads(bookmarks() & @-::) ~ @)", "--no-graph", "-T",
             'if(local_bookmarks, local_bookmarks.join(", "), remote_bookmarks.map(|ref| ref.name()).join(", "))'),
         runAsync("jj", "--ignore-working-copy", "-R", cwd, "--no-pager", "diff", "--stat"),
     ])
@@ -114,6 +117,7 @@ async function buildJjSection() {
     const [changeId, bookmarks] = atOut.split("\n")
     if (!changeId) return null
 
+    const ancestorBookmark = rawAncestor || rawDescendant
     let branch = changeId
     if (bookmarks) branch += ` (${bookmarks})`
     // Don't show "on X" when X is already the current bookmark

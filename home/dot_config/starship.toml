@@ -47,10 +47,15 @@ jj --ignore-working-copy log -r @ --no-graph \
   -T 'change_id.shortest() ++ "\n" ++ local_bookmarks.join(" ")' \
   > "$tmpdir/at" 2>/dev/null &
 
-# Ancestor bookmark, or nearest descendant bookmark if @ is behind trunk
-jj --ignore-working-copy log -r 'latest(ancestors(@-) & (trunk() | bookmarks())) | latest(heads(bookmarks() & @-::) ~ @)' --no-graph \
+# Ancestor bookmark (@ is on top of this)
+jj --ignore-working-copy log -r 'latest(ancestors(@-) & (trunk() | bookmarks()))' --no-graph \
   -T 'if(local_bookmarks, local_bookmarks.join(" "), remote_bookmarks.map(|ref| ref.name()).join(" "))' \
   > "$tmpdir/base" 2>/dev/null &
+
+# Descendant bookmark (@ is behind this — fallback when no ancestor bookmark found)
+jj --ignore-working-copy log -r 'latest(heads(bookmarks() & @-::) ~ @)' --no-graph \
+  -T 'if(local_bookmarks, local_bookmarks.join(" "), remote_bookmarks.map(|ref| ref.name()).join(" "))' \
+  > "$tmpdir/desc" 2>/dev/null &
 
 # Diff stats (takes working-copy lock)
 jj diff --stat > "$tmpdir/stats" 2>/dev/null &
@@ -64,6 +69,7 @@ bookmarks=$(sed -n '2p' "$tmpdir/at")
 id="$change_id"
 [ -n "$bookmarks" ] && id="$id $bookmarks"
 base=$(cat "$tmpdir/base")
+[ -z "$base" ] && base=$(cat "$tmpdir/desc")
 stats=$(tail -1 "$tmpdir/stats")
 
 # Don't show "on X" when X is already the current bookmark
