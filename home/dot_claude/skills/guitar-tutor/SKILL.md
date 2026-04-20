@@ -104,6 +104,7 @@ Shared columns (all Types):
 | `Type` | `Book`, `Video course`, `Lesson series`, `Video (single)`, `Website`, `Other`. |
 | `URL` | For non-book types (or publisher page for books). |
 | `Primary tag` (multi-select) | `guitar`, `sheet-music` (for books); a row may carry both — e.g. Brouwer's etudes are pedagogy *and* performance scores. |
+| `Status` (single-select) | `Active` (in current rotation, coach pulls from these), `Backburner` (queued, will return), `Parked` (set aside, not abandoned), `Done` (worked through, archived). User/coach maintained — coach proposes transitions; user confirms. Empty = not yet curated. |
 | `Topics` (multi-select) | Shared vocabulary across Types — drives cross-media recommendations. |
 | `Skill level` | `beginner`, `intermediate`, `advanced`, `mixed`. |
 | `Summary` | 2–3 sentences. Filled by **Index book** for Type=Book. |
@@ -424,9 +425,11 @@ data-source URL conventions). Specific to this skill:
   Practice Log.
 - `Topics`, `Text layer`, `Cap status` multi-selects: pass as JSON array
   strings (`'["slurs", "right-hand arpeggios"]'`).
-- Adding a new `Topics` / `Text layer` / `Cap status` / `Type` value
-  requires `notion-update-data-source` with ALTER COLUMN before creating
-  rows that use it.
+- `Status` is single-select, not multi-select — pass as a plain string,
+  not a JSON array.
+- Adding a new `Topics` / `Text layer` / `Cap status` / `Type` /
+  `Status` value requires `notion-update-data-source` with ALTER COLUMN
+  before creating rows that use it.
 - Never edit Practice Log schema from this skill. This skill only reads
   Practice Log (and only via the Project Custom Instructions' coaching
   workflow — not here).
