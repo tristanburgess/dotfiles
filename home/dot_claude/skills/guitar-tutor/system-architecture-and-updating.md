@@ -78,9 +78,16 @@ Unified catalog of every learning resource: books, video courses,
 lesson series, individual videos, websites.
 
 Shared columns: `Title`, `Authors/Instructor`, `Type`, `URL`,
-`Primary tag`, `Topics` (multi-select), `Skill level`, `Summary`,
+`Primary tag`, `Status` (single-select: Active / Backburner / Parked /
+Done), `Topics` (multi-select), `Skill level`, `Summary`,
 `Progress` (text), `Usage guides` (relation → Guides),
 `Exercises` (relation → Exercises).
+
+`Status` drives the Guitar Mastery homepage's **Currently Active**
+linked view: only rows with `Status=Active` surface there. Coach
+proposes transitions ("time to move on?") when session count, Mood
+trend (Routine/Distracted recurring), or calendar drift meets
+threshold; user confirms before flip.
 
 Book-only columns (`Type=Book`): `Calibre ID`, `File path`, `Pages`,
 `Size MB`, `Text layer` (Unknown/Native/OCRed/Scanned),
