@@ -84,16 +84,38 @@ Done), `Topics` (multi-select), `Skill level`, `Summary`,
 `Exercises` (relation → Exercises).
 
 `Status` drives the Guitar Mastery homepage's **Currently Active**
-linked view: only rows with `Status=Active` surface there. Coach
-proposes transitions ("time to move on?") when session count, Mood
-trend (Routine/Distracted recurring), or calendar drift meets
-threshold; user confirms before flip.
+linked view: only rows with `Status=Active` surface there, filtered
+to `Parent is empty` (shows parents, not split parts). The view
+also shows `In Project` (checkbox — checked on single-file books
+that are loaded, or on the specific part row loaded for split books)
+and `Loaded Parts` (rollup showing only the part(s) with `In Project`
+checked). Coach proposes transitions ("time to move on?") when
+session count, Mood trend (Routine/Distracted recurring), or calendar
+drift meets threshold; user confirms before flip.
+
+The inline database on the homepage has two tabs: **Currently Active**
+(parents with Status=Active, primary coaching view) and **Project
+Files** (any row with `In Project` checked — shows which PDFs are
+physically loaded; used to manage swaps).
 
 Book-only columns (`Type=Book`): `Calibre ID`, `File path`, `Pages`,
 `Size MB`, `Text layer` (Unknown/Native/OCRed/Scanned),
 `Cap status` (Unknown/Under caps/Over size/Over pages/Split),
-`Parent book` (self-relation for split parts), `Indexed` (checkbox),
-`Last indexed` (date), `TOC`.
+`Parent` (self-relation DUAL with `Parts` — set on split-part rows,
+points to canonical parent row; empty on parents),
+`Parts` (DUAL self-relation — auto-populated on parent rows when
+`Parent` is written on a part), `Indexed` (checkbox),
+`Last indexed` (date), `TOC`,
+`In Project` (checkbox — set on the row whose PDF is physically loaded
+in the Claude Desktop Project: parent row for single-file books,
+specific part row for split books; never set on split-book parent rows
+as those exceed Project caps),
+`Filtered Value for Rollup` (formula: `if(prop("In Project"), prop("Title"), "")` —
+returns the row's Title when `In Project` is checked, else empty;
+used only as a rollup target, not displayed directly),
+`Loaded Parts` (rollup of `Parts → Filtered Value for Rollup`
+with `show_original` aggregation — shows the title(s) of part rows
+that have `In Project` checked; read-only, maintained by Notion).
 
 Book rows are fully maintained by the `guitar-tutor` skill.
 Non-book rows are user-curated; Claude updates `Progress` on them
