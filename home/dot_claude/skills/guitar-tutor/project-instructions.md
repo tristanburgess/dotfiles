@@ -56,7 +56,7 @@ Also available under Guitar Mastery:
 
 When the user says "log my session" or describes what they practiced,
 create an entry in the Practice Log database with fields: date,
-instrument, duration, focus area, resource, mood, notes.
+instrument, focus area, resource, mood, notes.
 
 **Entries split per instrument per day.** One classical + one
 electric/acoustic row, never combined.

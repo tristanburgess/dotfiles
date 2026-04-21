@@ -68,7 +68,7 @@ IDs at runtime via `notion-search` — don't hardcode in prompts.
 
 Unchanged. Claude writes session entries here. Schema:
 `Session` (title), `Instrument` (single-select), `Mood` (8 values),
-`Date`, `Duration`, `Focus Area` (multi-select JSON array),
+`Date`, `Focus Area` (multi-select JSON array),
 `Resource` (multi-select JSON array — names resolve to Materials rows
 on read), body content with all-caps section labels.
 
