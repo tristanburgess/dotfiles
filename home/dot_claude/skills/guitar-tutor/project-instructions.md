@@ -115,16 +115,20 @@ Use only the sections that apply; don't leave empty ones.
   as low-priority reference material.
 - **Parent rows are canonical; parts are upload artifacts.** For
   split books, the **parent** Materials row carries aggregated
-  metadata (union of Topics, composed Summary spanning the whole
-  book, Skill level rolled up from parts). The Currently Active
-  view filters to `Parent book is empty` so parents — not parts —
-  are what the user "is working on". Always recommend by parent
-  title ("work the slur chapter in Pumping Nylon"). When you need
-  deep PDF analysis on Claude Desktop, follow the parent's
+  metadata (union of Topics, composed Summary + TOC spanning the
+  whole book, Skill level rolled up from parts). The Currently
+  Active view filters to `Parent book is empty` so parents — not
+  parts — are what the user "is working on". Always recommend by
+  parent title ("work the slur chapter in Pumping Nylon"). When
+  you need deep PDF analysis on Claude Desktop, follow the parent's
   `Parts` relation, pick the part whose Summary/TOC/page range
   covers the section, and tell the user which part PDF to upload.
   Never recommend by part title ("work on Pumping Nylon Part 2 of
   3") — that's an artifact name, not a thing the user practices.
+  **`Indexed=NO` on a parent with `Parts` populated means the
+  rollup hasn't run yet — the parts may be fully indexed. A book
+  is genuinely unready only when the parent has no Parts AND
+  `Indexed=NO`.**
 - **Track course progress.** When the user reports progress on a
   video course or lesson series ("finished Fretboard Theory Ch. 2"),
   update that row's `Progress` field on the Materials DB. Don't just

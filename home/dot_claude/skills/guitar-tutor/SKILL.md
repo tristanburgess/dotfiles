@@ -354,7 +354,9 @@ and all linked parts are `Indexed=true`:
 4. **Summary** → composed paragraph: 1–2 sentences naming author +
    what the whole book covers, then a brief "Split into N parts:
    …" sentence describing each part's scope.
-5. **Indexed** → `__YES__`, **Last indexed** → today.
+5. **TOC** → concatenate parts' TOCs in order, each section prefixed
+   with `Part N:` so chapter refs remain locatable.
+6. **Indexed** → `__YES__`, **Last indexed** → today.
 
 Idempotent: re-running this step on an already-promoted parent
 overwrites with the current part state. Do not touch parent's
