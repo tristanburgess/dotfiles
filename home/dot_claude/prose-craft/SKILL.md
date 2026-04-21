@@ -127,6 +127,12 @@ When introducing a pattern or concept, name it in 2-4 words before explaining it
 
 **Make the name genuinely new.** The best names are phrases that have never appeared together before. Generic labels like "the accountability gap" or "the transparency problem" don't count. Those are category descriptions, not names. A good name surprises on first read and feels inevitable on second read.
 
+### Comparison density
+
+When comparing proposals in a design doc, prefer prose paragraphs over exhaustive matrix tables. A matrix with 5+ rows and 5+ columns reads as LLM-dumped; the reader can't tell which dimensions actually drove the decision.
+
+Use a table only when all rows-by-columns carry real distinction the decision hinges on. If a row would be "Same" across 3+ columns, or a column is "N/A" for 3+ rows, cut the table. State the 2-3 decisive tradeoffs in prose instead.
+
 ### Structural unpredictability
 
 Vary paragraph and section architecture deliberately. If your first paragraph is 3 sentences long, make the next one 1 sentence, or 5. Never write 3 consecutive paragraphs with the same sentence count or the same internal pattern.

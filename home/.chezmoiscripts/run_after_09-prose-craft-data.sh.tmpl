@@ -1,0 +1,54 @@
+{{- if ne .chezmoi.os "darwin" -}}
+#!/bin/bash
+set -euo pipefail
+
+# --- Data (registers + learning accumulator): extract from tarball if present ---
+TARBALL="/tmp/prose-craft-data.tar.gz"
+
+if [[ -f "$TARBALL" ]]; then
+    printf "Extracting prose-craft data from %s...\n" "$TARBALL"
+    STAGE="$(mktemp -d)"
+    trap 'rm -rf "$STAGE"' EXIT
+    tar -xzf "$TARBALL" -C "$STAGE"
+    SRC="$STAGE/prose-craft-data"
+
+    # Sync targets: marketplace + version-agnostic cache(s)
+    TARGETS=("$HOME/.claude/plugins/marketplaces/prose-craft")
+    for cache_dir in "$HOME"/.claude/plugins/cache/prose-craft/prose-craft/*; do
+        [[ -d "$cache_dir" ]] && TARGETS+=("$cache_dir")
+    done
+
+    for dest in "${TARGETS[@]}"; do
+        [[ -d "$dest" ]] || continue
+        for sub in registers learning; do
+            if [[ -d "$SRC/$sub" ]]; then
+                mkdir -p "$dest/$sub"
+                cp -r "$SRC/$sub/." "$dest/$sub/"
+                printf "Synced %s/ to %s\n" "$sub" "$dest"
+            fi
+        done
+    done
+fi
+
+# --- SKILL.md: sync dotfiles source to marketplace + cache ---
+SKILL_SRC="$HOME/.claude/prose-craft/SKILL.md"
+
+if [[ ! -f "$SKILL_SRC" ]]; then
+    exit 0
+fi
+
+# Marketplace clone
+MARKETPLACE_DEST="$HOME/.claude/plugins/marketplaces/prose-craft/skills/prose-craft/SKILL.md"
+if [[ -d "$(dirname "$MARKETPLACE_DEST")" ]]; then
+    cp "$SKILL_SRC" "$MARKETPLACE_DEST"
+    printf "Synced SKILL.md to marketplace\n"
+fi
+
+# Cache (version-agnostic glob)
+for cache_skill in "$HOME"/.claude/plugins/cache/prose-craft/prose-craft/*/skills/prose-craft/SKILL.md; do
+    if [[ -f "$cache_skill" ]]; then
+        cp "$SKILL_SRC" "$cache_skill"
+        printf "Synced SKILL.md to cache: %s\n" "$cache_skill"
+    fi
+done
+{{- end -}}
