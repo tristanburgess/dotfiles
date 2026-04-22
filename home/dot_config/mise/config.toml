@@ -16,7 +16,7 @@ jq = "1.8.1"
 # renovate: packageName=jj-vcs/jj datasource=github-releases
 jujutsu = "0.40.0"
 # renovate: packageName=neovim/neovim datasource=github-releases
-neovim = "0.12.1"
+neovim = "0.12.2"
 node = "lts"
 # renovate: packageName=rust-lang/rust datasource=github-releases
 rust = "1.95.0"
