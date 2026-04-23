@@ -1,0 +1,37 @@
+{{- if and .isLinuxBaremetal (get . "installCodex" | default false) -}}
+#!/bin/bash
+set -euo pipefail
+
+# Bare-metal Linux only — installs the Codex CLI binary from GitHub Releases.
+# On Windows, use the .exe installer from the same release page.
+
+# renovate: packageName=openai/codex datasource=github-releases
+CODEX_VERSION="rust-v0.123.0"
+
+ARCH=$(uname -m)
+case "$ARCH" in
+  x86_64)  CODEX_ARCH="x86_64-unknown-linux-musl" ;;
+  aarch64) CODEX_ARCH="aarch64-unknown-linux-musl" ;;
+  *)       echo "Unsupported arch: $ARCH"; exit 1 ;;
+esac
+
+echo "Installing codex ${CODEX_VERSION}..."
+
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "${TMPDIR}"' EXIT
+
+eval "$("$HOME/.local/bin/mise" activate bash)"
+
+gh release download "${CODEX_VERSION}" \
+    --repo openai/codex \
+    --pattern "codex-${CODEX_ARCH}.tar.gz" \
+    --dir "${TMPDIR}"
+
+tar -xzf "${TMPDIR}/codex-${CODEX_ARCH}.tar.gz" -C "${TMPDIR}"
+
+mkdir -p "$HOME/bin"
+mv "${TMPDIR}/codex-${CODEX_ARCH}" "$HOME/bin/codex"
+chmod +x "$HOME/bin/codex"
+
+echo "codex ${CODEX_VERSION} installed to ~/bin/codex"
+{{- end -}}
