@@ -1,3 +1,4 @@
+{{- if (get . "installClaude" | default true) -}}
 {{- /* Normalize home dir to forward slashes for JSON safety. */ -}}
 {{- $home := replace "\\" "/" .chezmoi.homeDir -}}
 #!/usr/bin/env bash
@@ -57,3 +58,4 @@ if [ "$CURRENT" != "$MERGED" ]; then
 else
   echo "Claude Desktop MCP config already up to date"
 fi
+{{- end -}}

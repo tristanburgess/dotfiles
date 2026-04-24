@@ -1,4 +1,4 @@
-{{- if .isLinuxBaremetal -}}
+{{- if and .isLinuxBaremetal (get . "installClaude" | default true) -}}
 #!/bin/bash
 set -euo pipefail
 

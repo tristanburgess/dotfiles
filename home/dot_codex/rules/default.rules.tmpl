@@ -1,0 +1,45 @@
+# Codex prefix_rules — mirrors Claude Code permissions allow/deny lists.
+# Paired with: home/dot_claude/modify_settings.json.sh.tmpl
+# Run home/dot_agents/check-permissions.sh to verify they stay in sync.
+
+# ── Allow: single-token patterns match any subsequent args ─────────────────
+
+prefix_rule(pattern = ["bun"],     decision = "allow")
+prefix_rule(pattern = ["cat"],     decision = "allow")
+prefix_rule(pattern = ["chezmoi"], decision = "allow")
+prefix_rule(pattern = ["eslint"],  decision = "allow")
+prefix_rule(pattern = ["find"],    decision = "allow")
+prefix_rule(pattern = ["gh"],      decision = "allow")
+prefix_rule(pattern = ["go"],      decision = "allow")
+prefix_rule(pattern = ["grep"],    decision = "allow")
+prefix_rule(pattern = ["jj"],      decision = "allow")
+prefix_rule(pattern = ["ls"],      decision = "allow")
+prefix_rule(pattern = ["make"],    decision = "allow")
+prefix_rule(pattern = ["mise"],    decision = "allow")
+prefix_rule(pattern = ["mypy"],    decision = "allow")
+prefix_rule(pattern = ["node"],    decision = "allow")
+prefix_rule(pattern = ["npm"],     decision = "allow")
+prefix_rule(pattern = ["npx"],     decision = "allow")
+prefix_rule(pattern = ["pip"],     decision = "allow")
+prefix_rule(pattern = ["pytest"],  decision = "allow")
+prefix_rule(pattern = ["python"],  decision = "allow")
+prefix_rule(pattern = ["ruff"],    decision = "allow")
+prefix_rule(pattern = ["sed"],     decision = "allow")
+prefix_rule(pattern = ["tsc"],     decision = "allow")
+prefix_rule(pattern = ["which"],   decision = "allow")
+
+# ── Forbidden ──────────────────────────────────────────────────────────────
+
+prefix_rule(pattern = ["git", "push", "--force"],             decision = "forbidden", justification = "Force-push denied; add commits instead")
+prefix_rule(pattern = ["git", "push", "--force-with-lease"],  decision = "forbidden", justification = "Force-push denied; add commits instead")
+prefix_rule(pattern = ["git", "commit", "--no-verify"],       decision = "forbidden", justification = "Bypasses pre-commit hooks")
+prefix_rule(pattern = ["git", "rebase", "--no-verify"],       decision = "forbidden", justification = "Bypasses pre-commit hooks")
+prefix_rule(pattern = ["git", "merge", "--no-verify"],        decision = "forbidden", justification = "Bypasses pre-commit hooks")
+prefix_rule(pattern = ["rm", "-rf", "/"],                     decision = "forbidden", justification = "Destructive root delete")
+prefix_rule(pattern = ["chmod", "777"],                       decision = "forbidden", justification = "World-writable permission denied")
+prefix_rule(pattern = ["ssh"],                                decision = "forbidden", justification = "Direct SSH denied")
+prefix_rule(pattern = ["nc"],                                 decision = "forbidden", justification = "Netcat denied")
+prefix_rule(pattern = ["scp"],                                decision = "forbidden", justification = "SCP denied")
+
+# Prompt before curl to prevent curl|bash patterns
+prefix_rule(pattern = ["curl"], decision = "prompt", justification = "Prompt to prevent curl|bash patterns")

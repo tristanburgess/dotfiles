@@ -36,3 +36,13 @@ bin/toggle-dnd.sh
 # ─── WSL: hide bare-metal-only target files that fail in WSLg ───
 bin/toggle-dnd.sh
 {{ end }}
+
+{{ if not (get . "installClaude" | default true) }}
+# ─── User opted out of Claude at init time ───
+.claude/**
+{{ end }}
+
+{{ if not (get . "installCodex" | default false) }}
+# ─── User opted out of Codex at init time ───
+.codex/**
+{{ end }}
