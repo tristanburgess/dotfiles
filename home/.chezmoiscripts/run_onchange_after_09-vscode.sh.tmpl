@@ -1,0 +1,34 @@
+{{- if ne .chezmoi.os "windows" -}}
+#!/bin/bash
+set -euo pipefail
+
+# VS Code extensions — re-runs when this list changes.
+
+command -v code >/dev/null 2>&1 || { printf "code not found, skipping extension install\n"; exit 0; }
+
+EXTENSIONS=(
+    "anthropic.claude-code"
+    "bierner.markdown-mermaid"
+    "bierner.markdown-preview-github-styles"
+    "bpruitt-goddard.mermaid-markdown-syntax-highlighting"
+    "github.copilot-chat"
+    "github.vscode-pull-request-github"
+    "golang.go"
+    "grafana.grafana-alloy"
+    "grafana.vscode-jsonnet"
+    "hashicorp.terraform"
+    "visualjj.visualjj"
+)
+
+INSTALLED=$(code --list-extensions 2>/dev/null | tr '[:upper:]' '[:lower:]')
+
+for EXT in "${EXTENSIONS[@]}"; do
+    EXT_LOWER=$(printf "%s" "$EXT" | tr '[:upper:]' '[:lower:]')
+    if ! printf "%s\n" "$INSTALLED" | grep -qx "$EXT_LOWER"; then
+        printf "Installing VS Code extension: %s\n" "$EXT"
+        code --install-extension "$EXT"
+    fi
+done
+
+printf "VS Code extensions up to date.\n"
+{{- end -}}

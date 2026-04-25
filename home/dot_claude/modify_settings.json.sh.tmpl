@@ -52,6 +52,7 @@ MANAGED='
       "Bash(gh api*)",
       "Bash(gh pr*)",
       "Bash(go build*)",
+      "Bash(golangci-lint*)",
       "Bash(go doc*)",
       "Bash(go env*)",
       "Bash(go run*)",
@@ -155,6 +156,15 @@ MANAGED='
       }
     ],
     "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/hooks/go-format-lint.sh"
+          }
+        ]
+      },
       {
         "matcher": "Bash",
         "hooks": [
