@@ -138,7 +138,31 @@ Generic — not tied to any specific issue, but may link to one.
 | Trigger hypothesis | Rich text | |
 | What helped | Rich text | May be empty at log time |
 | Linked session | Relation → Workout Log | Optional |
-| Linked Chronic Issue | Relation → Chronic Issues | Optional; auto-suggested when Body Area matches a registered issue |
+| Linked Chronic Issue | Relation → Chronic Issues | Optional; auto-suggested when Body Area matches a registered issue. Multi-link when both an existing pattern and a separate one are implicated. |
+
+**Dual-mode usage.** The same schema serves two distinct usages:
+
+- **Flare/tweak mode** — event-based. Issue Type ∈ {acute-tweak,
+  soreness, fatigue, flare-of-known-issue}. Intensity reflects the
+  event itself.
+- **Characterisation mode** — descriptive update to an existing
+  pattern. Issue Type = `other`. Intensity reflects baseline (often
+  low). Narrative (mapping a tender point, an ROM observation,
+  refining the picture of a known issue) goes in Trigger hypothesis
+  / What helped.
+
+Example characterisation: "2026-04-26 — inferior scap mobility
+finding" maps a new tender point under Scap L; Issue Type = other;
+Intensity = 2; narrative documents the finding. Linked Chronic
+Issue: Left-Sided Cervico-Scapular Chain.
+
+Trend analysis (per the **Correlate** workflow) filters on Issue
+Type so characterisation entries are not mistaken for flares. Reach
+for characterisation rather than registering a new Chronic Issue
+when the finding refines an already-registered issue. A new Chronic
+Issue is warranted only when the pattern is genuinely separate
+(different etiology, different escalation criteria, different doctor
+type).
 
 ### Body Metrics (DB)
 
@@ -181,6 +205,44 @@ Page body sections (populated during **Register chronic issue**):
 - **Interventions tried** — running history.
 - **Doctor-prep summary** — regenerated before planned visits.
 
+### Protocols (DB)
+
+Cross-cutting protocols that wrap around the main program — rehab
+blocks, mobility routines, soft-tissue work, warmup/cooldown
+systems, weakness-fix prioritisation, etc. Tracked separately from
+the Current Training Plan page so they have lifecycle (active /
+dormant / archived) and so they can be linked from Workout Log,
+Chronic Issues, and Plan Revisions.
+
+| Property | Type | Notes |
+|---|---|---|
+| Protocol | Title | Short label |
+| Status | Select | Active / Dormant / Archived / Experimental |
+| Type | Multi-select | Rehab / Mobility / Stability / Soft Tissue / Warmup / Cooldown / Activation / Weakness Fix / Other |
+| Slot | Multi-select | Morning / Pre-gym / In-gym / Post-gym / Off-gym block / Pre-bed / On-demand / Daily anytime |
+| Frequency | Rich text | e.g., `Daily`, `3×/week`, `Each gym day` |
+| Duration (min) | Number | Approximate per-session minutes |
+| Targets Chronic Issue | Relation → Chronic Issues (DUAL `Protocols`) | Multi |
+| Exercises | Relation → Exercise Library (DUAL `Used in Protocols`) | Multi |
+| Source | Select | PT / Kit Laughlin / ExRx / Catalyst Athletics / Self-derived / Other |
+| Activated Date | Date | When status went Active |
+| Deactivated Date | Date | When status left Active |
+| Linked Plan Revision | Relation → Plan Revisions (DUAL `Protocols`) | Activation / deactivation audit trail |
+| Notes | Rich text | Per-protocol cues, structure, body-content pointer |
+
+Per-protocol prescription detail (warmup sequence, set/rep
+structure, day variants, cues) lives in the **page body** of each
+row — DB properties stay shape-only.
+
+Default view: filtered to `Status = Active`, sorted by Activated
+Date desc.
+
+The DUAL relations mean each Chronic Issue page surfaces a
+`Protocols` reverse-relation (which protocols target this issue),
+each Exercise Library row surfaces `Used in Protocols`, and each
+Plan Revisions row surfaces `Protocols` (which protocols this
+revision activated or deactivated).
+
 ## Muscle vocabulary (ExRx-aligned)
 
 Used as multi-select values on Exercise Library. Seed via ALTER
@@ -220,10 +282,30 @@ schema values stay formal for queryability.
 | Notion MCP operational gotchas | Health Project Custom Instructions | Desktop (mobile uses cloud connector, fewer gotchas apply) |
 | Bootstrap workspace | `health` skill | Claude Code CLI (laptop) |
 | Register chronic issue | `health` skill | Claude Code CLI (laptop); can also run from Desktop if user prefers |
+| Register / activate / deactivate protocol | `health` skill | Claude Code CLI (laptop) |
+| Self-assessment intake | Health Project Custom Instructions | Any surface (vision-capable) |
 | Correlate logs | `health` skill | Claude Code CLI (laptop) |
 | Revise training plan | `health` skill + Health Project Custom Instructions | Either; CLI recommended for rich diffs |
 | Sync this doc → Notion | `health` skill's Sync workflow | Claude Code CLI |
 | Per-issue escalation criteria | Generated at Register time; stored on the issue page | Read by all surfaces at runtime |
+
+## Self-assessment intake
+
+The user may share annotated photos circling spots, ROM tests,
+stability tests, or other functional self-assessments. Treat as data
+for refining the protocol — not as a diagnosis.
+
+- Map circles / pointers to likely anatomy. Name the structures.
+- Suggest an interpretation; explicitly flag what is inference vs
+  what is observable.
+- For notable findings: log a Symptom Log characterisation entry
+  (Issue Type = `other`) linked to the relevant Chronic Issue.
+- For clearly out-of-scope findings (e.g., something that needs a PT
+  or doctor's hands-on assessment): say so, and queue the finding
+  for the Doctor-prep summary on the relevant Chronic Issue page.
+
+This workflow is reusable for future flares. Visual / functional
+self-assessment is data, not diagnosis.
 
 ## Update loop — how to change the system
 
