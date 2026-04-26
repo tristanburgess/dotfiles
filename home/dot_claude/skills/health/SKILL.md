@@ -72,6 +72,7 @@ notion-search "Plan Revisions"
 notion-search "Body Metrics"
 notion-search "Current Training Plan"   # page, not DB
 notion-search "Chronic Issues"          # DB of issue pages
+notion-search "Protocols"               # cross-cutting protocol DB
 ```
 
 If the core DBs return nothing → run **Bootstrap Health workspace**
@@ -166,8 +167,15 @@ Steps:
    5. Body Metrics (no relations).
    6. Chronic Issues (no inbound relations at create time; Symptom
       Log's relation to it is wired after both exist).
+   7. Protocols (relations → Chronic Issues, Exercise Library, Plan
+      Revisions; all DUAL — back-relations named `Protocols` on each
+      target DB, except Exercise Library which uses
+      `Used in Protocols`).
    Full schema per DB is in the architecture doc
    (`system-architecture-and-updating.md`).
+   Each step is existence-checked first via `notion-search` — only
+   create what's missing. Re-running bootstrap on an established
+   workspace must be a no-op for already-present DBs.
 4. **Seed multi-select vocabularies** via `notion-update-data-source`
    ALTER COLUMN before any row creation:
    - Exercise Library: `Category`, `Equipment`, `Muscles (primary)`,
@@ -187,6 +195,14 @@ Steps:
    - Chronic Issues: `Status` (active / dormant / resolved),
      `System` (musculoskeletal, neurological, cardiovascular,
      metabolic, other).
+   - Protocols:
+     - `Status` (Active / Dormant / Archived / Experimental).
+     - `Type` (Rehab / Mobility / Stability / Soft Tissue / Warmup
+       / Cooldown / Activation / Weakness Fix / Other).
+     - `Slot` (Morning / Pre-gym / In-gym / Post-gym / Off-gym
+       block / Pre-bed / On-demand / Daily anytime).
+     - `Source` (PT / Kit Laughlin / ExRx / Catalyst Athletics /
+       Self-derived / Other).
 5. **Create Current Training Plan page** as a child of Health. Body
    reflects the user's responses from step 2. See *Current Training
    Plan — page structure* below for the expected section layout.
@@ -280,6 +296,79 @@ Steps:
 The escalation criteria live on the issue page, not in this skill.
 Coaching surfaces read them at runtime to know when to flag the user
 toward professional care.
+
+## Workflow: Register protocol
+
+Purpose: add a cross-cutting protocol (rehab block, mobility routine,
+soft-tissue work, warmup/cooldown system, weakness-fix prioritisation,
+etc.) to the Protocols DB. Run when the user adopts a new protocol
+that wraps around the main program.
+
+Steps:
+
+1. Resolve Protocols, Chronic Issues, Exercise Library, Plan Revisions
+   data sources via `notion-search`.
+2. **Interview** the user to characterise the protocol:
+   - Name (short title).
+   - Type — multi-select from the seeded vocabulary.
+   - Slot — multi-select; when in the day/week does it run.
+   - Frequency (free text, e.g., `Daily`, `3×/week`,
+     `Each gym day`).
+   - Duration (min) — approximate.
+   - Source — PT / Kit Laughlin / ExRx / Catalyst Athletics /
+     Self-derived / Other.
+   - Target Chronic Issue(s) — link to existing rows; if a target
+     isn't yet registered and should be, branch to **Register
+     chronic issue** first.
+   - Exercises — for each movement, resolve to an Exercise Library
+     row. Create rows for any that don't exist (Category, Equipment,
+     Muscles, Source, Reference link — ExRx first, Catalyst
+     fallback). Skip `Rehab issues supported` /
+     `Rehab substitute for` at create time — backfill as needed.
+   - Notes — per-protocol cues, structure, body-content pointer.
+3. Create the Protocols row:
+   - `Status = Active`.
+   - `Activated Date = today`.
+   - Wire `Targets Chronic Issue` and `Exercises` relations.
+4. Optional but default-yes: append a Plan Revisions row of
+   `Change Type = rehab add` recording the activation, and link via
+   `Linked Plan Revision`. Diff summary: short prose describing what
+   changed in the user's overall integration (e.g., "Activated
+   Scap+Core Foundation Block 3×/week off-gym").
+5. Populate the row's page body with the per-protocol prescription
+   (warmup sequence, set/rep structure, day variants, cues). Body
+   detail is what coaching surfaces read; DB properties stay
+   shape-only.
+
+## Workflow: Activate protocol / Deactivate protocol
+
+Purpose: flip a registered protocol's lifecycle state with audit
+trail.
+
+Triggered when:
+- The user starts (re-starts) using a protocol previously paused.
+- The user pauses or retires a protocol.
+
+Steps:
+
+1. Resolve the Protocols row by name via `notion-search`.
+2. **Activate**:
+   - Set `Status = Active`.
+   - Set `Activated Date = today`. Clear `Deactivated Date`.
+3. **Deactivate**:
+   - Set `Status = Dormant` by default. If user states the protocol
+     is permanently retired, use `Archived`.
+   - Set `Deactivated Date = today`.
+4. Append a Plan Revisions row:
+   - `Change Type = rehab add` (Activate) or `rehab remove`
+     (Deactivate).
+   - Reason: user's rationale.
+   - Diff summary: `Activated: <name>` or `Deactivated: <name>`.
+   - Effective Date: today.
+5. Link the new Plan Revisions row back to the protocol via
+   `Linked Plan Revision`.
+
+Never delete a protocol row. Lifecycle is encoded by Status + dates.
 
 ## Workflow: Log workout
 
@@ -439,6 +528,7 @@ Bootstrap Health workspace  →  Sync system doc
             ↓
    (on demand, as needed)
 Register chronic issue (per issue)
+Register protocol  →  Activate / Deactivate protocol (lifecycle)
             ↓
    (routine use, any surface)
 Log workout / Log symptom / Plan day-of adjustment

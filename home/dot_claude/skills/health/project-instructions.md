@@ -24,6 +24,9 @@ Notion:
 - **Symptom Log** — last 14 days.
 - **Chronic Issues** — all rows with `Status = active`, including
   each issue page's escalation criteria.
+- **Active Protocols** — all Protocols DB rows where
+  `Status = Active`. Their content is part of session context for
+  warmup, cooldown, and rehab guidance.
 
 Don't ask the user to re-state what's already in Notion.
 
@@ -71,12 +74,21 @@ repeatedly.
      sets × reps × weight, feel / RPE, relevant Chronic Issue flare
      state(s).
    - `Plan Revision` → active revision.
-   - `Exercises` → all rows referenced.
-3. **Always ask at session end** about any registered Chronic Issue
+   - **`Exercises` (relation, REQUIRED)** → one row per movement
+     performed: the main lift AND every accessory line. This is the
+     relation that makes Correlate-by-exercise queries possible —
+     partial entries silently break trend analysis.
+3. **Pre-save verification gate.** Before creating the row, verify:
+   - `Exercises` count = 1 (main lift) + number of accessory lines.
+     No fewer. If any movement is unresolved, return to step 1 and
+     create the missing Library row first. **Do not save the
+     Workout Log row with a partial `Exercises` relation.**
+   - `Plan Revision` is set to the active revision.
+4. **Always ask at session end** about any registered Chronic Issue
    whose body area overlaps today's lift. If no Chronic Issues, ask
    generic "anything flared or tweaked today?" and log to Symptom
    Log if relevant.
-4. Flag plan deviations inline — don't bury them. If weight was below
+5. Flag plan deviations inline — don't bury them. If weight was below
    prescribed, ask whether to revise the plan or note it as a bad
    day. If a new accessory appeared, ask if it should be added to
    the day template (Revise training plan).
@@ -153,7 +165,42 @@ connects to a registered issue.
 - Trigger hypothesis + what helped (text).
 - `Linked session` — if a recent Workout Log is implicated.
 - `Linked Chronic Issue` — if the Body Area matches a registered
-  issue's area.
+  issue's area. Multi-link when both an existing pattern and a
+  separate one are implicated (e.g., both Cervical and Left Chain).
+
+## Symptom Log dual-mode
+
+Two modes share one schema:
+
+- **Flare/tweak mode** — event-based. Issue Type ∈ {acute-tweak,
+  soreness, fatigue, flare-of-known-issue}. Intensity reflects the
+  event.
+- **Characterisation mode** — descriptive update to an existing
+  pattern (e.g., mapping a new tender point, an ROM observation,
+  refining the picture of a known issue). Issue Type = `other`.
+  Intensity reflects baseline (often low). Narrative goes in
+  Trigger hypothesis / What helped.
+
+Characterisation entries are **not** counted as flares in trend
+analysis — filter on `Issue Type` when computing flare frequency.
+
+Reach for characterisation rather than registering a new Chronic
+Issue when the finding refines an already-registered issue. Only
+register a new Chronic Issue when the pattern is genuinely separate
+(different etiology, different escalation criteria, different doctor
+type).
+
+## Self-assessment intake
+
+The user may share annotated photos circling spots, ROM tests,
+stability tests, or other functional self-assessments. Treat these
+as data for refining the protocol — not as a diagnosis.
+
+- Map circles / pointers to likely anatomy. Name the structures.
+- Suggest an interpretation; explicitly flag what is inference vs
+  what is observable.
+- For notable findings: log a Symptom Log characterisation entry
+  linked to the relevant Chronic Issue.
 
 ## Body Metrics (sparse, narrative-first)
 
