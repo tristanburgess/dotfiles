@@ -91,6 +91,12 @@ Default references, in preference order:
 Fill `Reference link` on the Exercise Library row with the best
 direct page (ExRx preferred; Catalyst if ExRx doesn't cover it).
 
+For **Protocols DB** rows, always populate `Reference link` when
+`Source` is not Self-derived: use the official source page or a
+video (YouTube preferred for mobility/technique protocols). When
+creating a new Protocol row in any workflow, search for a reference
+URL before writing the row.
+
 ## Muscle vocabulary — ExRx-aligned
 
 The Exercise Library's `Muscles (primary)` and `Muscles (secondary)`
@@ -339,7 +345,15 @@ conversation mid-week.
    prescribed movement, offer sub / load reduction options. **Don't
    force**: the user decides whether to sub. Note the decision for
    Log workout.
-6. Present the prescription. Log workout runs after the session.
+6. Present the prescription. For each named item (main lifts,
+   accessories, warmup/cooldown, rehab blocks, named protocols),
+   resolve links in this order:
+   - Exercise Library match → link row + `Reference link` as `([ExRx](url))`
+   - Protocols DB match (no Exercise Library match) → link protocol
+     page + `Reference link` as `([ref](url))`
+   - No match in either → create Exercise Library row in-flight
+     (same as Log workout step 4), then link it
+   Log workout runs after the session.
 
 ## Workflow: Revise training plan
 
