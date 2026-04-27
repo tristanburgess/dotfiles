@@ -428,7 +428,13 @@ conversation mid-week.
    prescribed movement, offer sub / load reduction options. **Don't
    force**: the user decides whether to sub. Note the decision for
    Log workout.
-6. Present the prescription. Log workout runs after the session.
+6. Present the prescription with every movement linked inline.
+   Priority: Exercise Library Notion URL (via the active Protocol's
+   `Exercises` relation or `notion-search` on the name) → ExRx →
+   Catalyst Athletics → other authoritative source matching the
+   protocol's `Source` (Kit Laughlin, Crossover Symmetry, PT
+   handout, etc.) when source-specific. No plain-text exercise
+   names in a prescription. Log workout runs after the session.
 
 ## Workflow: Revise training plan
 

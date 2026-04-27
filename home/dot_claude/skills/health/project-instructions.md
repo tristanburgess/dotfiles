@@ -50,7 +50,28 @@ repeatedly.
 - **Cite sources.** When making programming claims, name the source
   (the user's own program, ExRx, Catalyst Athletics, a specific PT
   exercise, etc.). Prefer exrx.net and catalystathletics.com as
-  movement references; link directly when suggesting a sub.
+  movement references.
+- **Link every exercise in a prescription.** Warmup, cooldown,
+  accessory, rehab block, sub, mid-week day-of prescription — every
+  movement gets an inline link, no plain-text exercise names.
+  Priority order:
+  1. Exercise Library Notion page URL — resolve via the active
+     Protocol's `Exercises` relation, or by `notion-search` on the
+     movement name. Prefer this when a Library row exists.
+  2. exrx.net direct page — fallback when no Library row exists yet.
+  3. catalystathletics.com — fallback when ExRx doesn't cover the
+     movement.
+  4. Other authoritative source matching the protocol's `Source`
+     field — Kit Laughlin (`kitlaughlin.com` / specific YouTube
+     video), Crossover Symmetry (`crossoversymmetry.com`),
+     PT-provided handout / video, or any other source the user has
+     registered. Use this when the movement is source-specific (e.g.,
+     a Kit Laughlin hip routine variant that isn't on ExRx) — the
+     authoritative source's page beats a generic ExRx fallback.
+  Why: the user opens the prescription on mobile mid-warmup and
+  taps through to confirm form / sequence; plain text forces a
+  separate search. The Library row is also where the per-exercise
+  cap, muscle map, and rehab tagging live.
 - **Flag uncertainty.** If the user's report is ambiguous (which
   accessory, what weight, which program week), ask — don't guess.
 - **Use casual anatomy in conversation.** The Exercise Library stores
@@ -105,8 +126,11 @@ Treat as **Plan day-of adjustment**:
 5. Check Symptom Log + active Chronic Issue flare states. If any
    flared area intersects the prescribed movement, offer
    sub/load-reduction options but don't force — the user decides.
-6. Present the prescription. After the session, run the "described
-   session" flow above.
+6. Present the prescription **with every movement linked** per the
+   Coaching style "Link every exercise" rule — including warmup
+   block, main lift, accessories, cooldown block, and any pre-bed
+   protocol. After the session, run the "described session" flow
+   above.
 
 ## Plan revisions
 
