@@ -1,0 +1,62 @@
+{{- if eq .chezmoi.os "windows" -}}
+# VS Code settings + extensions — re-runs when this file changes.
+
+$settingsDir = "$env:APPDATA\Code\User"
+New-Item -ItemType Directory -Force -Path $settingsDir | Out-Null
+
+$settings = @'
+{
+    "github.copilot.nextEditSuggestions.enabled": true,
+    "extensions.ignoreRecommendations": true,
+    "files.insertFinalNewline": true,
+    "[jsonnet]": {},
+    "workbench.colorTheme": "Dark+",
+    "[go]": {
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+        },
+        "editor.defaultFormatter": "golang.go"
+    },
+    "go.lintTool": "golangci-lint-v2",
+    "go.lintOnSave": "package",
+    "go.formatTool": "default",
+    "go.useLanguageServer": true,
+    "diffEditor.renderSideBySideInlineBreakpoint": 1440,
+    "claudeCode.preferredLocation": "panel"
+}
+'@
+
+Set-Content -Path "$settingsDir\settings.json" -Value $settings -Encoding UTF8
+Write-Host "VS Code settings written."
+
+$extensions = @(
+    "anthropic.claude-code"
+    "bierner.markdown-mermaid"
+    "bierner.markdown-preview-github-styles"
+    "bpruitt-goddard.mermaid-markdown-syntax-highlighting"
+    "github.copilot-chat"
+    "github.vscode-pull-request-github"
+    "golang.go"
+    "grafana.grafana-alloy"
+    "grafana.vscode-jsonnet"
+    "hashicorp.terraform"
+    "visualjj.visualjj"
+)
+
+if (-not (Get-Command code -ErrorAction SilentlyContinue)) {
+    Write-Host "code not found, skipping extension install"
+    exit 0
+}
+
+$installed = (code --list-extensions 2>$null) -join "`n" | ForEach-Object { $_.ToLower() }
+
+foreach ($ext in $extensions) {
+    if ($installed -notmatch [regex]::Escape($ext.ToLower())) {
+        Write-Host "Installing VS Code extension: $ext"
+        code --install-extension $ext
+    }
+}
+
+Write-Host "VS Code extensions up to date."
+{{- end -}}

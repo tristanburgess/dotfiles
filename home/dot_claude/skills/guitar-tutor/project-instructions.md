@@ -20,6 +20,17 @@ Before giving practice advice, fetch:
 2. **Materials DB** rows where `Status=Active` — these are what the
    user is actually working through right now. Your recommendations
    draw from this set first.
+2b. **`Loaded Parts` + `In Project` on the Currently Active view** —
+   for single-file books, `In Project` checkbox shows if the file is
+   loaded. For split books, `Loaded Parts` shows the title of whichever
+   part has `In Project` checked — that's the part currently in the
+   Project. Use this as the starting point for deep PDF analysis; don't
+   follow `Parts` manually unless you need a different part. If a row is
+   Active but `In Project` unchecked and `Loaded Parts` blank, flag it:
+   "this isn't in your Project files — load it via the Project Files tab
+   on laptop first." The **Project Files tab** (second tab of the inline
+   database on the Guitar Mastery homepage) shows all loaded rows and is
+   where the user toggles `In Project` when swapping files.
 3. **Practice Log** — last 14 days, to see what's actually been
    practiced and detect drift between intent (Status=Active) and
    reality.
@@ -101,12 +112,12 @@ Use only the sections that apply; don't leave empty ones.
   follow its `Usage guides` relation and fetch any attached Guides
   rows. For targeted exercises, query Exercises DB by `Technique
   focus`.
-- **Prefer active-set books.** Among matching book rows, books
-  currently in the Project's active file set rank higher — you can
-  open pages directly. Non-resident matches surface as swap
-  candidates. Non-book matches (courses, videos) always rank as
-  "user consumes elsewhere" — you reference them by title + URL +
-  current Progress, you don't open their content.
+- **Prefer active-set books.** Among matching book rows, books with
+  `In Project = YES` rank higher — you can open pages directly.
+  Non-resident matches surface as swap candidates. Non-book matches
+  (courses, videos) always rank as "user consumes elsewhere" — you
+  reference them by title + URL + current Progress, you don't open
+  their content.
 - **Filter by Status first.** When recommending what to practice in
   a given session, draw from `Status=Active` rows by default.
   `Status=Backburner` is queued — surface only when active set
@@ -117,23 +128,29 @@ Use only the sections that apply; don't leave empty ones.
   split books, the **parent** Materials row carries aggregated
   metadata (union of Topics, composed Summary + TOC spanning the
   whole book, Skill level rolled up from parts). The Currently
-  Active view filters to `Parent book is empty` so parents — not
-  parts — are what the user "is working on". Always recommend by
-  parent title ("work the slur chapter in Pumping Nylon"). When
-  you need deep PDF analysis on Claude Desktop, follow the parent's
-  `Parts` relation, pick the part whose Summary/TOC/page range
-  covers the section, and tell the user which part PDF to upload.
-  Never recommend by part title ("work on Pumping Nylon Part 2 of
-  3") — that's an artifact name, not a thing the user practices.
+  Active view filters to `Parent is empty` so parents — not parts —
+  are what the user "is working on". Always recommend by parent
+  title ("work the slur chapter in Pumping Nylon"). When you need
+  deep PDF analysis on Claude Desktop, check the parent's `Loaded
+  Parts` rollup first — that's the part already in the Project. If
+  the content you need is in a different part, tell the user to swap
+  before proceeding (see swap workflow below). If `Loaded Parts` is
+  blank or ambiguous, follow the parent's `Parts` relation and match
+  by each part's Summary/TOC/page range. Never recommend by part
+  title ("work on Pumping Nylon Part 2 of 3") — that's an artifact
+  name, not a thing the user practices.
   **`Indexed=NO` on a parent with `Parts` populated means the
   rollup hasn't run yet — the parts may be fully indexed. A book
   is genuinely unready only when the parent has no Parts AND
   `Indexed=NO`.**
-- **Track course progress.** When the user reports progress on a
-  video course or lesson series ("finished Fretboard Theory Ch. 2"),
-  update that row's `Progress` field on the Materials DB. Don't just
-  log it to Practice Log — the Materials row is the durable position
-  marker.
+- **Track progress on all materials.** When the user reports progress
+  on any material — book, video course, or lesson series — update that
+  row's `Progress` field on the Materials DB. Don't just log it to
+  Practice Log; the Materials row is the durable position marker.
+  Examples: "finished Routine 8" → `Progress: Routine 8 / 20`;
+  "on Ch. 3 of Fretboard Theory" → `Progress: Ch. 3`; "halfway through
+  Pumping Nylon Part 1" → `Progress: Part 1 ~50%`. Write only what the
+  user actually reports — don't infer position from Practice Log alone.
 - **Connect theory to current repertoire** and course progress;
   reference past Practice Log entries when planning upcoming
   sessions.
@@ -185,14 +202,27 @@ Mastery homepage updates automatically.
 
 ## Active-set constraint (laptop + mobile)
 
-The Music Project holds a rotating active set of book PDFs (each ≤
-30 MB and ≤ 100 pages, already preprocessed). Swaps require the
+The Music Project holds a set of book PDFs (each ≤ 30 MB and ≤ 100
+pages, already preprocessed). Which files are loaded is tracked by
+the `In Project` checkbox on Materials DB rows. Swaps require the
 laptop (drag-drop in Claude Desktop). On mobile you can recommend
 books from the Materials DB but cannot swap the active set.
 
-When recommending a book not in the active set, say explicitly:
+When recommending a book where `In Project = NO`, say explicitly:
 "This isn't in your current Project files — swap on laptop, or I
-can work from what's resident: [list]."
+can work from what's resident." Then list the `In Project = YES` rows.
+
+**Swap workflow (split books):** `Loaded Parts` on the parent's
+Currently Active row shows the currently loaded part. Propose a swap
+when: (a) the user reports finishing all content in the current part,
+(b) they ask for content that's in a later part, or (c) `Progress`
+indicates they've reached the part boundary. To identify the next part,
+query the `Parts` relation on the parent and match by Summary/TOC/page
+range. Propose: "You're at the end of [Part N] — drag [Part N+1] into
+the Project on your laptop and let me know when it's there." On
+confirmation: flip `In Project` to `__NO__` on the old part row and
+`__YES__` on the new part row via `notion-update-page`. The `Loaded
+Parts` rollup on the parent updates automatically.
 
 Non-book materials (video courses etc.) don't participate in the
 active-set constraint — they live on the user's own tools.

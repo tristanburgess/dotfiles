@@ -1,0 +1,24 @@
+{{- $home := .chezmoi.homeDir -}}
+# model intentionally unset — Codex negotiates with backend based on auth method.
+# ChatGPT account auth picks from your plan; API key auth: set to e.g. "gpt-4o".
+model_provider = "openai"
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+
+# Fall back to CLAUDE.md if no AGENTS.md present in a project
+project_doc_fallback_filenames = ["AGENTS.md", "CLAUDE.md"]
+
+# Reuse Claude's notify.sh for turn-end desktop notifications
+notify = ["{{ $home }}/.claude/notify.sh"]
+
+[tui]
+# Preset statusline — not extensible with custom commands (unlike Claude).
+# git-branch reads jj bookmark name via the underlying git repo (no change ID).
+status_line = ["model-with-reasoning", "git-branch", "context-used", "five-hour-limit", "weekly-limit", "used-tokens"]
+
+[permissions.secrets.filesystem]
+"{{ $home }}/.ssh/**"  = "none"
+"{{ $home }}/.aws/**"  = "none"
+"**/.env*"             = "none"
+"**/credentials*"      = "none"
+

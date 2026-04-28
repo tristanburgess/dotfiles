@@ -1,5 +1,6 @@
 {{- $name := promptStringOnce . "name" "Full name" -}}
 {{- $email := promptStringOnce . "email" "Email address" -}}
+{{- $aiTools := promptMultichoiceOnce . "aiTools" "AI tools to install" (list "claude" "codex") (list "claude") -}}
 
 {{- /* OS detection: derive isWSL from kernel.osrelease on Linux */ -}}
 {{- $isWSL := false -}}
@@ -18,6 +19,9 @@ sourceDir = {{ .chezmoi.sourceDir | quote }}
     isWSL = {{ $isWSL }}
     isWindows = {{ eq .chezmoi.os "windows" }}
     isLinuxBaremetal = {{ and (eq .chezmoi.os "linux") (not $isWSL) }}
+    aiTools = {{ $aiTools | toJson }}
+    installClaude = {{ has "claude" $aiTools }}
+    installCodex = {{ has "codex" $aiTools }}
 
 [merge]
     command = "nvim"

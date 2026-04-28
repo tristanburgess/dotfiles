@@ -133,6 +133,14 @@ When comparing proposals in a design doc, prefer prose paragraphs over exhaustiv
 
 Use a table only when all rows-by-columns carry real distinction the decision hinges on. If a row would be "Same" across 3+ columns, or a column is "N/A" for 3+ rows, cut the table. State the 2-3 decisive tradeoffs in prose instead.
 
+### Problem section structure
+
+When a Problem section lists 3+ concerns, consider subsections. Each concern gets its own `##` header if it requires more than 1-2 sentences to explain. Explain the mechanism (why is this a problem), then any edge cases or context that affects later decision-making. Problem subsections should read as technical depth, not as repeated bullet points.
+
+### Cross-cutting concerns precede proposals
+
+In design docs that evaluate multiple options, place shared constraints, risks, and architectural concerns *before* the option space. These provide the ground for decision-making. Introduce this section with a framing line that signals to the reader why it matters: "I want to cover some concerns first as they may significantly influence decision making." This prevents readers from evaluating options in a vacuum.
+
 ### Structural unpredictability
 
 Vary paragraph and section architecture deliberately. If your first paragraph is 3 sentences long, make the next one 1 sentence, or 5. Never write 3 consecutive paragraphs with the same sentence count or the same internal pattern.

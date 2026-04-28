@@ -118,8 +118,12 @@ Book-only columns (used only when `Type=Book`):
 |---|---|---|
 | `Calibre ID`, `File path`, `Pages`, `Size MB` | — | Mirrored from Calibre. `File path` always points to the **PDF** Claude works with (post-normalize). For split books, one row per part. |
 | `Text layer` | `Unknown`, `Native`, `OCRed`, `Scanned` | `Unknown` = never triaged. `Native` = original had a text layer. `OCRed` = we added one via ocrmypdf. `Scanned` = needs OCR (image-only). |
-| `Cap status` | `Unknown`, `Under caps`, `Over size`, `Over pages`, `Split` | `Under caps` = ≤30 MB and ≤100 pages. `Split` = either (a) this row was split into parts, OR (b) this row is one of those parts. Distinguish via `Parent book`: empty on parents, set on parts. |
-| `Parent book` | relation → self | Set on split-part rows; points at the pre-split canonical row. Empty on the parent itself. |
+| `Cap status` | `Unknown`, `Under caps`, `Over size`, `Over pages`, `Split` | `Under caps` = ≤30 MB and ≤100 pages. `Split` = either (a) this row was split into parts, OR (b) this row is one of those parts. Distinguish via `Parent`: empty on parents, set on parts. |
+| `Parent` | relation → self (DUAL with `Parts`) | Set on split-part rows; points at the pre-split canonical row. Empty on the parent itself. Writing to `Parent` on a part auto-populates `Parts` on the parent (DUAL). |
+| `Parts` | relation → self (DUAL with `Parent`) | Set on parent rows; lists all split parts. Auto-populated when `Parent` is written on part rows (DUAL). Read via `Parts` to get part page URLs for a given parent. |
+| `In Project` | checkbox | Set on the row whose PDF is physically in the Claude Desktop Project. Single-file books: set on the parent row. Split books: set on the specific part row currently loaded — never on the split-book parent (that file exceeds Project caps). Toggle via the **Project Files** tab on the Guitar Mastery homepage. Flip on swap: old part off, new part on. |
+| `Filtered Value for Rollup` | formula (computed) | `if(prop("In Project"), prop("Title"), "")` — returns the row's Title when `In Project` is checked, else empty string. Used only as a rollup target; not meaningful to display directly. |
+| `Loaded Parts` | rollup (computed) | Rollup on `Parts` → `Filtered Value for Rollup` (`show_original`). Shows the title(s) of part rows that have `In Project` checked — i.e., parts currently loaded in the Claude Desktop Project. Read-only; maintained by Notion. |
 | `Indexed` | checkbox | True once summary/TOC/exercises extracted. |
 | `Last indexed` | date | Last successful index pass. |
 | `TOC` | — | Chapter/section outline. Filled by **Index book**. |
@@ -275,7 +279,7 @@ Purpose: enforce the 30 MB / 100 page caps by splitting oversized PDFs
 into parts, each independently under both caps.
 
 Scope: rows where `Type=Book` AND `Cap status ∈ {Unknown, Over size,
-Over pages}` AND `Text layer ∈ {Native, OCRed}` AND `Parent book` is
+Over pages}` AND `Text layer ∈ {Native, OCRed}` AND `Parent` is
 empty (never re-split a part, and never re-split a parent that already
 has `Cap status=Split`).
 
@@ -296,9 +300,9 @@ Per row:
 5. Update state:
    - Parent row → set `Cap status=Split`. (Scope filters on
      `Cap status ∈ {Unknown, Over size, Over pages}`, so `Split`
-     parents are never re-processed. `Parent book` remains empty on
+     parents are never re-processed. `Parent` remains empty on
      the parent, distinguishing it from its parts.)
-   - One new row per part with `Cap status=Split`, `Parent book` →
+   - One new row per part with `Cap status=Split`, `Parent` →
      parent, `Text layer` inherited (that's why OCR runs first), `Pages`
      and `Size MB` from the part, `Indexed=false`.
 6. Verify each part opens (`qpdf --check`) and is under both caps. If
@@ -343,7 +347,7 @@ must be aggregated so the catalog view sees the book as one entity
 with full metadata. Coach recommendations target parent rows; parts
 are upload artifacts.
 
-For each parent row where `Cap status=Split`, `Parent book` is empty,
+For each parent row where `Cap status=Split`, `Parent` is empty,
 and all linked parts are `Indexed=true`:
 
 1. **Topics** (multi-select) → union of parts' Topics.
