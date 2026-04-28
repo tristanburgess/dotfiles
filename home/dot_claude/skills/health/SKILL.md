@@ -92,6 +92,12 @@ Default references, in preference order:
 Fill `Reference link` on the Exercise Library row with the best
 direct page (ExRx preferred; Catalyst if ExRx doesn't cover it).
 
+For **Protocols DB** rows, always populate `Reference link` when
+`Source` is not Self-derived: use the official source page or a
+video (YouTube preferred for mobility/technique protocols). When
+creating a new Protocol row in any workflow, search for a reference
+URL before writing the row.
+
 ## Muscle vocabulary — ExRx-aligned
 
 The Exercise Library's `Muscles (primary)` and `Muscles (secondary)`

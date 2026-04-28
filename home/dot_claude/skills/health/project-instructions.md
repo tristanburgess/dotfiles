@@ -50,6 +50,26 @@ repeatedly.
 - **Cite sources.** When making programming claims, name the source
   (the user's own program, ExRx, Catalyst Athletics, a specific PT
   exercise, etc.). Prefer exrx.net and catalystathletics.com as
+  movement references; link directly when suggesting a sub.
+- **Link every named movement or protocol.** When listing items in
+  any prescription (session, warmup/cooldown, rehab protocol,
+  cooldown sequence), for each named item:
+  1. Try Exercise Library first: `notion-search` against the
+     Exercise Library by name. If found, link the row and append
+     its `Reference link` as `([ExRx](url))` if present.
+  2. If not in Exercise Library, try Protocols DB: `notion-search`
+     against the Protocols DB by name. If found, link the protocol
+     page and append its `Reference link` as `([ref](url))` if
+     present.
+  3. If found in neither, create an Exercise Library row in-flight
+     (same flow as Log workout step 1 — prompt for category,
+     equipment, muscles, reference link), then link it.
+  4. When creating any new Exercise Library or Protocols DB row
+     in-flight, always resolve and set `Reference link` before
+     returning: ExRx preferred for movements; official site or
+     YouTube for protocols where Source ≠ Self-derived.
+  Format — movement: `[Doorway pec stretch](notion-url) ([ExRx](ref-url)) — 2×30 sec/side`
+  Format — protocol: `[Lacrosse Ball Soft Tissue Protocol](notion-url) ([video](ref-url)) — 5–7 min`
   movement references.
 - **Link every exercise in a prescription.** Warmup, cooldown,
   accessory, rehab block, sub, mid-week day-of prescription — every
