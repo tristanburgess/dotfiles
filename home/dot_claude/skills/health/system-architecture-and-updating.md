@@ -271,6 +271,98 @@ COLUMN at bootstrap, before creating any row.
 Coaching surfaces translate to casual anatomy in conversation;
 schema values stay formal for queryability.
 
+## Reference link validation (hard gate)
+
+Every Exercise Library row's `Reference link` must point to media
+that visibly demonstrates *this exact exercise by this name*. The
+gate runs at row create + update time, in **Bootstrap Health
+workspace** step 8 and **Log workout** step 4 (in-flight create), and
+again whenever a workflow re-touches an existing row's
+`Reference link`. On gate failure, the workflow refuses to write the
+link and either prompts the user for a replacement or saves the row
+with `Reference link` empty + a `Notes` annotation.
+
+### Valid-link criteria
+
+A `Reference link` value is **valid** iff both:
+
+1. The URL fetches successfully and the rendered page or video
+   clearly demonstrates the exercise on the row, by the name on the
+   row. Verification is by *content*, not by URL slug.
+2. The source is one of:
+   - `exrx.net` direct movement page (preferred for cataloged lifts;
+     ExRx may block headless fetches but is treated as authoritative
+     when the URL pattern matches a known ExRx exercise path).
+   - `catalystathletics.com/exercise/<id>/<slug>/` where the rendered
+     page content matches the row name. **The `<id>` segment is
+     canonical; the `<slug>` is cosmetic and routinely mismatches.**
+     Always fetch and verify content, never trust the slug.
+   - `crossoversymmetry.com` page or their official YouTube channel.
+   - `yogajala.com` direct pose page — for yoga-named mobility
+     movements (Malasana, Parsva Sukhasana, Paschimottanasana,
+     Anjaneyasana, Ardha Matsyendrasana, etc.). Verify by fetching;
+     page must describe the pose named on the row.
+   - `youtube.com/watch?v=...` from Kit Laughlin / Stretch Therapy,
+     Jim Wendler / 5-3-1 official, Crossover Symmetry, or another
+     reputable PT/coach.
+     - **If the video covers more than one exercise** (compilation,
+       flow, "session", multi-stretch sequence), the URL **must**
+       carry a `?t=Xs` or `&t=Xs` timestamp parameter that lands at
+       the exercise. Untimestamped multi-exercise videos fail the
+       gate.
+
+### Source preference order
+
+When picking or replacing a link:
+
+```
+ExRx (cataloged lift)
+  → Catalyst Athletics (id-verified content match)
+  → official source matching the row's `Source` field
+     (Kit Laughlin / 5-3-1 / Crossover Symmetry / PT)
+  → yogajala.com (yoga-named movements)
+  → reputable coach YT (timestamped if multi-exercise)
+  → empty + Notes annotation
+```
+
+### No-public-demo escape hatch
+
+For PT-prescribed or otherwise idiosyncratic exercises that have no
+public demo meeting the criteria, leave `Reference link` empty and
+append to `Notes`:
+
+```
+[<YYYY-MM-DD> audit: <previous URL or "no public demo on file">
+removed/missing — <one-line reason>. Needs validated single-exercise
+demo or timestamped (?t=Xs) link.]
+```
+
+This is the only sanctioned way to leave a row without a link.
+
+### Workflow obligation
+
+Any workflow that creates or modifies an Exercise Library
+`Reference link` must, before calling `notion-create-pages` /
+`notion-update-page`:
+
+1. Fetch the candidate URL (`WebFetch` or equivalent).
+2. Confirm the rendered content matches the row's `Name`.
+3. For YouTube: confirm timestamp policy if the video isn't dedicated
+   to a single exercise.
+4. On failure: refuse to write the link, prompt the user for a
+   replacement, or fall back to the no-public-demo escape hatch.
+
+Pattern observed during the 2026-04-27 audit (regression cases to
+test against on any future tooling):
+
+- Catalyst URL `/exercise/691/Foam-Roller-Thoracic-Extension/`
+  actually serves **Floating Power Clean** — gate must reject.
+- Catalyst URL `/exercise/621/Prone-T-Y-W-Raise/` actually serves
+  **Pause Quarter Back Squat Jump** — gate must reject.
+- YouTube `watch?v=z2ghLlUPRuU` is "Mobilising and stretching
+  session, focus on hips" (a compilation) — gate must reject when
+  used without a `?t=` timestamp on a single-exercise row.
+
 ## Where each capability lives
 
 | Capability | Where defined | Surface |
