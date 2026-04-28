@@ -87,9 +87,52 @@ Default references, in preference order:
    (`https://www.catalystathletics.com/exercises/`) — form cues and
    supplemental movement ideas. The user can't do Olympic lifting
    but still values the form detail and accessory coverage.
+3. **Single-exercise YouTube** from the row's `Source` channel — Kit
+   Laughlin / Stretch Therapy, Jim Wendler / 5-3-1 official, Crossover
+   Symmetry official, or another reputable PT/coach when ExRx and
+   Catalyst don't cover the variant.
+4. **yogajala.com** direct pose page — for yoga-named mobility
+   movements (asana, pranayama, stretch flows). Prefer when the
+   exercise name maps to a named yoga pose or is derived from one
+   (e.g., Malasana, Parsva Sukhasana, Paschimottanasana, Anjaneyasana).
+   Verify content match by fetching the URL.
 
 Fill `Reference link` on the Exercise Library row with the best
-direct page (ExRx preferred; Catalyst if ExRx doesn't cover it).
+direct page that **demonstrates this exercise by this name**.
+
+## Reference link validation (hard gate)
+
+Every Exercise Library row's `Reference link` must point to media
+that visibly demonstrates *this exact exercise*, not a related
+movement or a compilation it's buried inside. Enforced at row
+create + update time — see the full gate spec in
+`system-architecture-and-updating.md` § Reference link validation.
+
+Summary of the gate:
+
+- **Verify content match by fetching the URL**, not by trusting the
+  slug. Catalyst Athletics URLs of the form
+  `catalystathletics.com/exercise/<id>/<slug>/` are canonical on
+  `<id>` only — the `<slug>` is cosmetic and routinely mismatches
+  the rendered page (this audit found `/691/Foam-Roller-Thoracic-
+  Extension/` actually serves Floating Power Clean).
+- **YouTube videos that aren't dedicated to one exercise must carry a
+  `?t=Xs` (or `&t=Xs`) timestamp** that lands at the exercise.
+  Untimestamped multi-exercise / flow / "session" videos fail the
+  gate.
+- **Source preference order:** ExRx (cataloged lift) → Catalyst
+  Athletics (id-verified content match) → official source matching
+  the row's `Source` field → yogajala.com (yoga-named movements) →
+  reputable coach YT (timestamped if multi-exercise) → leave
+  `Reference link` empty + annotate `Notes` with `"<previous URL or
+  "no public demo found"> — needs validated single-exercise demo or
+  timestamped link"`.
+- **Never fabricate a link.** Empty + Notes annotation beats a
+  misleading reference.
+
+Apply the gate in **Bootstrap Health workspace** step 8 (seed) and in
+**Log workout** step 4 (in-flight Exercise Library row create). On
+failure, refuse to write the link and prompt the user.
 
 ## Muscle vocabulary — ExRx-aligned
 
@@ -199,7 +242,10 @@ Steps:
    listed in step 2. Each row gets primary + secondary muscles from
    the ExRx vocabulary, default cap per equipment, and a reference
    link (ExRx preferred, Catalyst fallback) when a direct page
-   exists.
+   exists. **Every seeded row's `Reference link` runs the validation
+   gate** (see *Reference link validation* above). On gate failure,
+   leave the link empty and annotate `Notes` per the spec rather than
+   writing an unverified URL.
 9. **Populate the homepage** — replace the Health project page body
    with:
    - **Quick Reference** — current TMs, cycle, program week.
@@ -304,9 +350,14 @@ Purpose: create a Workout Log row from a session description.
      none registered).
 4. For each accessory, resolve to an Exercise Library row by name.
    If unknown → create a new row in-flight (prompt for category,
-   equipment, muscles, reference link). Skip `Rehab issues supported`
-   and `Rehab substitute for` on in-flight rows — fill those when
-   setting up subs for a registered issue, not mid-session.
+   equipment, muscles, reference link). The in-flight row's
+   `Reference link` runs the validation gate (see *Reference link
+   validation*). If no validated link is available at session time,
+   save the row with `Reference link` empty + `Notes` annotation per
+   the spec and continue the session — don't block logging on a
+   missing reference. Skip `Rehab issues supported` and `Rehab
+   substitute for` on in-flight rows — fill those when setting up
+   subs for a registered issue, not mid-session.
 5. Create the Workout Log row:
    - Title format: `<YYYY-MM-DD> <Day Type> <Program Week>`.
    - Multi-select fields as JSON array strings.
