@@ -5,8 +5,10 @@ name = {{ .name | quote }}
 email = {{ .email | quote }}
 
 [ui]
+editor = "code -w"
 diff-formatter = ["difft", "--color=always", "$left", "$right"]
 diff-editor = ["code", "--wait", "--diff"]
+merge-editor = "code -w" 
 
 [revsets]
 # Only show current work + one trunk commit for context by default.

@@ -89,6 +89,12 @@ if [[ ! -f /etc/apt/sources.list.d/openshot_developers-ppa-noble.list ]] && \
     sudo add-apt-repository -y ppa:openshot.developers/ppa
 fi
 
+# --- Trivy ---
+add_repo "trivy" \
+    "/usr/share/keyrings/trivy.gpg" \
+    "https://aquasecurity.github.io/trivy-repo/deb/public.key" \
+    "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main"
+
 sudo apt update -qq
 printf "All custom APT repos configured.\n"
 {{- end -}}
