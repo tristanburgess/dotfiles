@@ -78,28 +78,34 @@ repeatedly.
      equipment, muscles, reference link), then link it.
   4. When creating any new Exercise Library or Protocols DB row
      in-flight, always resolve and set `Reference link` before
-     returning: ExRx preferred for movements; official site or
-     YouTube for protocols where Source ≠ Self-derived.
+     returning. Pick per the canonical 7-tier preference order
+     (above) and apply the **Reference link gate** (below) — better
+     blank + annotated than wrong.
   Format — movement: `[Doorway pec stretch](notion-url) ([ExRx](ref-url)) — 2×30 sec/side`
   Format — protocol: `[Lacrosse Ball Soft Tissue Protocol](notion-url) ([video](ref-url)) — 5–7 min`
   movement references.
 - **Link every exercise in a prescription.** Warmup, cooldown,
   accessory, rehab block, sub, mid-week day-of prescription — every
   movement gets an inline link, no plain-text exercise names.
-  Priority order:
+  Priority order (mirrors the canonical 7-tier preference in the
+  Reference link gate):
   1. Exercise Library Notion page URL — resolve via the active
      Protocol's `Exercises` relation, or by `notion-search` on the
      movement name. Prefer this when a Library row exists.
-  2. exrx.net direct page — fallback when no Library row exists yet.
-  3. catalystathletics.com — fallback when ExRx doesn't cover the
-     movement.
-  4. Other authoritative source matching the protocol's `Source`
-     field — Kit Laughlin (`kitlaughlin.com` / specific YouTube
-     video), Crossover Symmetry (`crossoversymmetry.com`),
-     PT-provided handout / video, or any other source the user has
-     registered. Use this when the movement is source-specific (e.g.,
-     a Kit Laughlin hip routine variant that isn't on ExRx) — the
-     authoritative source's page beats a generic ExRx fallback.
+  2. exrx.net direct page.
+  3. catalystathletics.com (id-verified content match — never trust
+     the slug).
+  4. Official source matching the row's `Source` field — Kit
+     Laughlin (`kitlaughlin.com` / Stretch Therapy YouTube),
+     Crossover Symmetry (`crossoversymmetry.com`), PT handout /
+     video, etc. Use when the movement is source-specific.
+  5. yogajala.com direct pose page — for yoga-named movements.
+  6. Reputable third-party fitness publisher direct exercise page —
+     musclewiki / muscleandstrength / healthline / verywellfit /
+     spine-health / hingehealth, or equivalent. Single-exercise
+     guide only, not a roundup.
+  7. Reputable coach YouTube — single-exercise demo. Multi-exercise
+     videos require a `?t=Xs` timestamp landing at the exercise.
   Why: the user opens the prescription on mobile mid-warmup and
   taps through to confirm form / sequence; plain text forces a
   separate search. The Library row is also where the per-exercise
@@ -111,13 +117,49 @@ repeatedly.
   delts" / "lats" / "upper traps" when that reads better. Switch to
   formal names when the user does.
 
+## Reference link gate (any in-flight Library / Protocols row)
+
+When creating or modifying an Exercise Library `Reference link`
+(e.g., new Library row mid-session, new Protocols row), the URL
+must point to media that visibly demonstrates *this exact exercise
+by this name*. Canonical spec lives in the `health` skill at
+`system-architecture-and-updating.md` § *Reference link validation
+(hard gate)*. Summary applicable on any surface:
+
+- **Discover by search, not by slug guessing.** Run a broad-query
+  search for the exercise name (`"<name>" exercise guide
+  site:exrx.net OR site:catalystathletics.com OR site:yogajala.com
+  OR site:musclewiki.com OR site:healthline.com`), pull top 3–5
+  candidates, fetch and verify each. Walk down the list when one
+  fails. Never template the exercise name into a known site's slug
+  pattern — that produced the 2026-04-27 audit regressions.
+- **Verify content match by fetch, not slug.** Catalyst URLs of
+  form `catalystathletics.com/exercise/<id>/<slug>/` are canonical
+  on `<id>` only — slugs routinely mismatch the rendered page.
+- **YouTube videos that aren't dedicated to one exercise must carry
+  a `?t=Xs` timestamp** landing at the exercise. Untimestamped
+  multi-exercise / "session" videos fail the gate.
+- **Source preference order:** the 7-tier order from "Link every
+  exercise in a prescription" above.
+- **Better blank than wrong.** On gate failure, leave the
+  `Reference link` empty and append the canonical bracketed dated
+  no-public-demo annotation to `Notes` — format documented in
+  `system-architecture-and-updating.md` § *No-public-demo escape
+  hatch*. An unverified URL on mobile mid-warmup is worse than no
+  URL.
+
+If you would normally write a `Reference link` mid-session and the
+gate fails, save the row with the link empty + annotation and
+continue — don't block logging on a missing reference.
+
 ## Session flow
 
 ### User describes a completed session
 
 1. Resolve accessories to Exercise Library rows. If a new movement is
    mentioned, create a Library row (prompt for category, equipment,
-   muscles, reference link — ExRx first, Catalyst fallback). Skip
+   muscles, reference link — pick per the canonical 7-tier preference
+   order and run the **Reference link gate**). Skip
    `Rehab issues supported` / `Rehab substitute for` on in-flight
    rows — fill those when setting up subs for a registered issue.
 2. Create the Workout Log row with:

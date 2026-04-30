@@ -121,7 +121,7 @@ Append-only audit trail.
 | Rehab issues supported | Multi-select | Conditions/issues this exercise safely accommodates during a flare-up or rehab phase; add values per condition as needed |
 | Rehab substitute for | Relation → Exercise Library | Exercise(s) this replaces when the supported condition makes the original inadvisable |
 | Source | Select | User program / crossover symmetry / Kit Laughlin / PT / ExRx / Catalyst Athletics / other |
-| Reference link | URL | ExRx preferred; Catalyst fallback |
+| Reference link | URL | Per Reference link gate (canonical 7-tier order) |
 | Notes | Rich text | Form cues, substitutions, context |
 
 ### Symptom Log (DB)
@@ -304,12 +304,13 @@ A `Reference link` value is **valid** iff both:
      page must describe the pose named on the row.
    - Reputable third-party fitness publisher direct exercise page —
      `musclewiki.com`, `muscleandstrength.com`, `healthline.com`,
-     `verywellfit.com`, or equivalent. Use as a fallback when
-     ExRx / Catalyst / yogajala don't cover the movement. The page
-     must be a direct single-exercise guide that names the exercise
-     in the title and describes it in body content; reject category
-     listings, "best X exercises" roundups, and articles that only
-     mention the exercise in passing.
+     `verywellfit.com`, `spine-health.com`, `hingehealth.com`, or
+     equivalent. Use as a fallback when ExRx / Catalyst / yogajala
+     don't cover the movement. The page must be a direct
+     single-exercise guide that names the exercise in the title and
+     describes it in body content; reject category listings,
+     "best X exercises" roundups, and articles that only mention
+     the exercise in passing.
    - `youtube.com/watch?v=...` from Kit Laughlin / Stretch Therapy,
      Jim Wendler / 5-3-1 official, Crossover Symmetry, or another
      reputable PT/coach.
@@ -330,7 +331,8 @@ ExRx (cataloged lift)
      (Kit Laughlin / 5-3-1 / Crossover Symmetry / PT)
   → yogajala.com (yoga-named movements)
   → reputable third-party publisher direct exercise page
-     (musclewiki / muscleandstrength / healthline / verywellfit)
+     (musclewiki / muscleandstrength / healthline / verywellfit /
+     spine-health / hingehealth)
   → reputable coach YT (timestamped if multi-exercise)
   → empty + Notes annotation
 ```

@@ -80,7 +80,8 @@ before proceeding. Chronic Issues may be empty; that's normal.
 
 ## Exercise references
 
-Default references, in preference order:
+Default references, in preference order (canonical 7-tier order;
+the validation gate below enforces it). Tier descriptions:
 
 1. **exrx.net** (`https://exrx.net/Lists/Directory`) — movement
    descriptions, primary/secondary musculature, mechanical analysis.
@@ -88,35 +89,31 @@ Default references, in preference order:
    (`https://www.catalystathletics.com/exercises/`) — form cues and
    supplemental movement ideas. The user can't do Olympic lifting
    but still values the form detail and accessory coverage.
-3. **yogajala.com** direct pose page — for yoga-named mobility
-   movements (asana, pranayama, stretch flows). Prefer when the
-   exercise name maps to a named yoga pose or is derived from one
-   (e.g., Malasana, Parsva Sukhasana, Paschimottanasana, Anjaneyasana).
-   Verify content match by fetching the URL.
-4. **Reputable third-party fitness publisher direct exercise page**
+3. **Official source matching the row's `Source` field** —
+   `crossoversymmetry.com` for Crossover Symmetry rows,
+   `kitlaughlin.com` / Stretch Therapy channel for Kit Laughlin rows,
+   PT handout/video for PT rows, etc. Use when the row's `Source` is
+   anything other than ExRx / Catalyst.
+4. **yogajala.com** direct pose page — for yoga-named mobility
+   movements (Malasana, Parsva Sukhasana, Paschimottanasana,
+   Anjaneyasana, Ardha Matsyendrasana, etc.). Verify content match
+   by fetching the URL.
+5. **Reputable third-party fitness publisher direct exercise page**
    — musclewiki.com, muscleandstrength.com, healthline.com,
-   verywellfit.com, or equivalent. Use when ExRx / Catalyst /
-   yogajala don't cover the movement. Must be a direct
-   single-exercise guide, not a roundup or category page.
-5. **Single-exercise YouTube** from the row's `Source` channel — Kit
-   Laughlin / Stretch Therapy, Jim Wendler / 5-3-1 official, Crossover
-   Symmetry official, or another reputable PT/coach when ExRx and
-   Catalyst don't cover the variant.
+   verywellfit.com, spine-health.com, hingehealth.com, or equivalent.
+   Use when ExRx / Catalyst / yogajala / official source don't cover
+   the movement. Must be a direct single-exercise guide, not a
+   roundup or category page.
+6. **Reputable coach YouTube** — single-exercise demo from a
+   reputable PT/coach when no static page above covers it. If the
+   video covers more than one exercise, the URL must carry a
+   `?t=Xs` timestamp landing at the exercise (see gate below).
+7. **Empty + `Notes` annotation** — when no candidate passes the
+   gate. Better blank than wrong.
 
 Fill `Reference link` on the Exercise Library row with the best
 direct page that **demonstrates this exercise by this name**.
-
-**Discover candidates by search, not by slug guessing.** Run a
-broad-query search for the exercise name biased toward the preferred
-sources (`"<name>" exercise guide site:exrx.net OR site:catalystathletics.com
-OR site:yogajala.com OR site:musclewiki.com OR site:muscleandstrength.com
-OR site:healthline.com`), pull the top 3-5 candidates, then fetch
-and verify each one against the row's `Name` and movement pattern.
-Walk down the list when a candidate fails. Don't construct a URL by
-templating the exercise name into a known site's slug pattern — that
-practice produced the 2026-04-27 audit regressions and is now
-prohibited. Full procedure in the architecture doc § *Discovery
-methodology*.
+Discovery (search, fetch, verify) and gate enforcement are below.
 
 ## Reference link validation (hard gate)
 
@@ -146,15 +143,12 @@ Summary of the gate:
   `?t=Xs` (or `&t=Xs`) timestamp** that lands at the exercise.
   Untimestamped multi-exercise / flow / "session" videos fail the
   gate.
-- **Source preference order:** ExRx (cataloged lift) → Catalyst
-  Athletics (id-verified content match) → official source matching
-  the row's `Source` field → yogajala.com (yoga-named movements) →
-  reputable third-party fitness publisher direct exercise page
-  (musclewiki / muscleandstrength / healthline / verywellfit) →
-  reputable coach YT (timestamped if multi-exercise) → leave
-  `Reference link` empty + annotate `Notes` with `"<previous URL or
-  "no public demo found"> — needs validated single-exercise demo or
-  timestamped link"`.
+- **Source preference order:** see § *Exercise references* above
+  (canonical 7-tier order). On gate failure, leave `Reference link`
+  empty and append the no-public-demo annotation to `Notes` using
+  the canonical bracketed dated format from
+  `system-architecture-and-updating.md` § *No-public-demo escape
+  hatch* — do not invent a competing wording.
 - **Never fabricate a link.** Empty + Notes annotation beats a
   misleading reference. Better blank than wrong — an unverified URL
   on mobile mid-warmup is worse than no URL.
@@ -291,11 +285,11 @@ Steps:
 8. **Seed Exercise Library** with one row per movement the user
    listed in step 2. Each row gets primary + secondary muscles from
    the ExRx vocabulary, default cap per equipment, and a reference
-   link (ExRx preferred, Catalyst fallback) when a direct page
-   exists. **Every seeded row's `Reference link` runs the validation
-   gate** (see *Reference link validation* above). On gate failure,
-   leave the link empty and annotate `Notes` per the spec rather than
-   writing an unverified URL.
+   link picked per the canonical 7-tier preference order (§ *Exercise
+   references*). **Every seeded row's `Reference link` runs the
+   validation gate** (see *Reference link validation* above). On gate
+   failure, leave the link empty and annotate `Notes` per the spec
+   rather than writing an unverified URL.
 9. **Populate the homepage** — replace the Health project page body
    with:
    - **Quick Reference** — current TMs, cycle, program week.
@@ -402,9 +396,10 @@ Steps:
      chronic issue** first.
    - Exercises — for each movement, resolve to an Exercise Library
      row. Create rows for any that don't exist (Category, Equipment,
-     Muscles, Source, Reference link — ExRx first, Catalyst
-     fallback). Skip `Rehab issues supported` /
-     `Rehab substitute for` at create time — backfill as needed.
+     Muscles, Source, Reference link — pick per the canonical 7-tier
+     order in § *Exercise references* and run the validation gate).
+     Skip `Rehab issues supported` / `Rehab substitute for` at create
+     time — backfill as needed.
    - Notes — per-protocol cues, structure, body-content pointer.
 3. Create the Protocols row:
    - `Status = Active`.
