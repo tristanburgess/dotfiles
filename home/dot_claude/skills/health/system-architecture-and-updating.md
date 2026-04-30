@@ -302,6 +302,14 @@ A `Reference link` value is **valid** iff both:
      movements (Malasana, Parsva Sukhasana, Paschimottanasana,
      Anjaneyasana, Ardha Matsyendrasana, etc.). Verify by fetching;
      page must describe the pose named on the row.
+   - Reputable third-party fitness publisher direct exercise page —
+     `musclewiki.com`, `muscleandstrength.com`, `healthline.com`,
+     `verywellfit.com`, or equivalent. Use as a fallback when
+     ExRx / Catalyst / yogajala don't cover the movement. The page
+     must be a direct single-exercise guide that names the exercise
+     in the title and describes it in body content; reject category
+     listings, "best X exercises" roundups, and articles that only
+     mention the exercise in passing.
    - `youtube.com/watch?v=...` from Kit Laughlin / Stretch Therapy,
      Jim Wendler / 5-3-1 official, Crossover Symmetry, or another
      reputable PT/coach.
@@ -321,9 +329,57 @@ ExRx (cataloged lift)
   → official source matching the row's `Source` field
      (Kit Laughlin / 5-3-1 / Crossover Symmetry / PT)
   → yogajala.com (yoga-named movements)
+  → reputable third-party publisher direct exercise page
+     (musclewiki / muscleandstrength / healthline / verywellfit)
   → reputable coach YT (timestamped if multi-exercise)
   → empty + Notes annotation
 ```
+
+### Discovery methodology — search, fetch, verify
+
+Don't guess URLs from the slug pattern of a preferred source. Slug
+guessing is what produced the 2026-04-27 audit regressions (Catalyst
+slugs that mismatched the page they served). Discover candidate
+URLs by querying for the exercise *name*, then verify each candidate
+by fetching its content.
+
+Procedure for any row that needs a `Reference link` (new row, broken
+link, or audit re-check):
+
+1. **Search** for the exercise name with a broad query that doesn't
+   commit to a single domain. Bias toward the source preference
+   order via an `OR` site filter, not a single `site:` constraint:
+   ```
+   "<exercise name>" exercise guide
+     site:exrx.net OR site:catalystathletics.com
+     OR site:yogajala.com OR site:musclewiki.com
+     OR site:healthline.com
+   ```
+   Use `WebSearch` (or equivalent). Pull the top 3-5 candidates.
+2. **Fetch** the top candidate URL with `WebFetch`. Ask the fetch
+   prompt to summarise: page title, what exercise the page describes,
+   whether the body content references this exercise by name, and
+   whether the instructions match the movement pattern implied by
+   the name.
+3. **Verify**. The candidate passes only if all of:
+   - Page returns 200 (not 404, not a generic results / category page).
+   - Title or H1 matches the row's `Name` (allow casing / hyphenation
+     variation; reject when the page describes a different movement
+     family).
+   - Body content references the exercise *by name* and the
+     instructions are consistent with the movement.
+   - Source is in the preferred source list (per *Valid-link
+     criteria*).
+4. **Walk down the candidate list** if the top result fails — try
+   the next, up to ~5. Don't widen sources beyond the preferred list.
+5. **Update** the row's `Reference link` only when a candidate passes
+   the gate. Otherwise leave the link empty + apply the no-public-
+   demo escape hatch annotation. Better blank than wrong: an
+   unverified URL is worse than no URL because the user may tap it
+   on mobile mid-warmup.
+
+This methodology supersedes any flow that constructs a candidate URL
+by templating the exercise name into a known site's slug pattern.
 
 ### No-public-demo escape hatch
 
@@ -345,12 +401,21 @@ Any workflow that creates or modifies an Exercise Library
 `Reference link` must, before calling `notion-create-pages` /
 `notion-update-page`:
 
-1. Fetch the candidate URL (`WebFetch` or equivalent).
-2. Confirm the rendered content matches the row's `Name`.
-3. For YouTube: confirm timestamp policy if the video isn't dedicated
+1. Discover the candidate URL via *Discovery methodology* above —
+   broad-query search for the exercise name, biased to the preferred
+   sources via `site: A OR site: B`, never by templating a slug.
+2. Fetch the candidate URL (`WebFetch` or equivalent).
+3. Confirm the rendered content matches the row's `Name` by *content*
+   (page title / H1, body references the exercise by name,
+   instructions consistent with the movement pattern). Reject 404s,
+   generic results / category pages, and pages describing a
+   different movement.
+4. For YouTube: confirm timestamp policy if the video isn't dedicated
    to a single exercise.
-4. On failure: refuse to write the link, prompt the user for a
-   replacement, or fall back to the no-public-demo escape hatch.
+5. On failure: walk down the candidate list (up to ~5). If still no
+   pass, refuse to write the link and fall back to the no-public-
+   demo escape hatch (empty + Notes annotation). Better blank than
+   wrong.
 
 Pattern observed during the 2026-04-27 audit (regression cases to
 test against on any future tooling):
