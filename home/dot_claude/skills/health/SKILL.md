@@ -88,18 +88,35 @@ Default references, in preference order:
    (`https://www.catalystathletics.com/exercises/`) — form cues and
    supplemental movement ideas. The user can't do Olympic lifting
    but still values the form detail and accessory coverage.
-3. **Single-exercise YouTube** from the row's `Source` channel — Kit
-   Laughlin / Stretch Therapy, Jim Wendler / 5-3-1 official, Crossover
-   Symmetry official, or another reputable PT/coach when ExRx and
-   Catalyst don't cover the variant.
-4. **yogajala.com** direct pose page — for yoga-named mobility
+3. **yogajala.com** direct pose page — for yoga-named mobility
    movements (asana, pranayama, stretch flows). Prefer when the
    exercise name maps to a named yoga pose or is derived from one
    (e.g., Malasana, Parsva Sukhasana, Paschimottanasana, Anjaneyasana).
    Verify content match by fetching the URL.
+4. **Reputable third-party fitness publisher direct exercise page**
+   — musclewiki.com, muscleandstrength.com, healthline.com,
+   verywellfit.com, or equivalent. Use when ExRx / Catalyst /
+   yogajala don't cover the movement. Must be a direct
+   single-exercise guide, not a roundup or category page.
+5. **Single-exercise YouTube** from the row's `Source` channel — Kit
+   Laughlin / Stretch Therapy, Jim Wendler / 5-3-1 official, Crossover
+   Symmetry official, or another reputable PT/coach when ExRx and
+   Catalyst don't cover the variant.
 
 Fill `Reference link` on the Exercise Library row with the best
 direct page that **demonstrates this exercise by this name**.
+
+**Discover candidates by search, not by slug guessing.** Run a
+broad-query search for the exercise name biased toward the preferred
+sources (`"<name>" exercise guide site:exrx.net OR site:catalystathletics.com
+OR site:yogajala.com OR site:musclewiki.com OR site:muscleandstrength.com
+OR site:healthline.com`), pull the top 3-5 candidates, then fetch
+and verify each one against the row's `Name` and movement pattern.
+Walk down the list when a candidate fails. Don't construct a URL by
+templating the exercise name into a known site's slug pattern — that
+practice produced the 2026-04-27 audit regressions and is now
+prohibited. Full procedure in the architecture doc § *Discovery
+methodology*.
 
 ## Reference link validation (hard gate)
 
@@ -111,6 +128,14 @@ create + update time — see the full gate spec in
 
 Summary of the gate:
 
+- **Discover by search, not by slug guessing.** For any row that
+  needs a link, run a broad-query search for the exercise name
+  (`"<name>" exercise guide site:exrx.net OR site:catalystathletics.com
+  OR site:yogajala.com OR site:musclewiki.com OR site:healthline.com`),
+  pull the top 3-5 candidates, and verify each by fetching the page.
+  Walk down the list when a candidate fails. Never construct a URL
+  by templating the exercise name into a known site's slug pattern —
+  that's what produced the 2026-04-27 audit regressions.
 - **Verify content match by fetching the URL**, not by trusting the
   slug. Catalyst Athletics URLs of the form
   `catalystathletics.com/exercise/<id>/<slug>/` are canonical on
@@ -124,12 +149,15 @@ Summary of the gate:
 - **Source preference order:** ExRx (cataloged lift) → Catalyst
   Athletics (id-verified content match) → official source matching
   the row's `Source` field → yogajala.com (yoga-named movements) →
+  reputable third-party fitness publisher direct exercise page
+  (musclewiki / muscleandstrength / healthline / verywellfit) →
   reputable coach YT (timestamped if multi-exercise) → leave
   `Reference link` empty + annotate `Notes` with `"<previous URL or
   "no public demo found"> — needs validated single-exercise demo or
   timestamped link"`.
 - **Never fabricate a link.** Empty + Notes annotation beats a
-  misleading reference.
+  misleading reference. Better blank than wrong — an unverified URL
+  on mobile mid-warmup is worse than no URL.
 
 Apply the gate in **Bootstrap Health workspace** step 8 (seed) and in
 **Log workout** step 4 (in-flight Exercise Library row create). On

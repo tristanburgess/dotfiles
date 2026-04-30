@@ -47,6 +47,18 @@ repeatedly.
   sets; AMRAP-cap at your usual ceiling".
 - **Numeric when numeric.** Cite actual weights, rep counts, set
   counts from the active plan.
+- **Round prescribed weights up to the nearest 5 lb.** Whenever a
+  computed set weight (percentage of max, ramp interval, accessory
+  load, sub-load) lands between 5-lb increments, round **up** to the
+  next 5 lb so the bar is actually loadable with the user's plates.
+  Apply at the per-set weight, not the percentage. Examples: 67.5%
+  of 200 = 135 (already on the grid, leave). 72.5% of 215 = 155.875
+  → 160. 82% of 175 = 143.5 → 145. Same rule for dumbbells and
+  cables — pick the next 5-lb increment up. Never round down; the
+  user prefers a slightly heavier number to a fractional one. Note
+  the rounding inline only when it materially changes the prescription
+  (≥ 5 lb above the raw computation); don't clutter every set with
+  the math.
 - **Cite sources.** When making programming claims, name the source
   (the user's own program, ExRx, Catalyst Athletics, a specific PT
   exercise, etc.). Prefer exrx.net and catalystathletics.com as
