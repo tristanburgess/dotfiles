@@ -1,35 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
-KDE_DND_PID_FILE="/tmp/kde-dnd-pid"
+# DND toggle for Cinnamon. KDE Plasma 6 has a built-in DND toggle action
+# (System Settings → Notifications) and a state-watcher daemon
+# (kde-dnd-watcher.py) that surfaces the OSD on toggle, so KDE does not
+# need this script.
 
-if [[ "${XDG_CURRENT_DESKTOP:-}" == *"KDE"* ]]; then
-    if [[ -f "$KDE_DND_PID_FILE" ]] && kill -0 "$(cat "$KDE_DND_PID_FILE")" 2>/dev/null; then
-        kill "$(cat "$KDE_DND_PID_FILE")"
-        rm -f "$KDE_DND_PID_FILE"
-        STATE="OFF"
-    else
-        rm -f "$KDE_DND_PID_FILE"
-        python3 -c "
-import dbus, dbus.mainloop.glib, gi.repository.GLib as GLib, signal
-dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
-bus = dbus.SessionBus()
-notif = bus.get_object('org.kde.plasmashell', '/org/freedesktop/Notifications')
-iface = dbus.Interface(notif, 'org.freedesktop.Notifications')
-cookie = iface.Inhibit('toggle-dnd', 'Do Not Disturb', {})
-loop = GLib.MainLoop()
-signal.signal(signal.SIGTERM, lambda *_: (iface.UnInhibit(cookie), loop.quit()))
-loop.run()
-" &
-        echo $! > "$KDE_DND_PID_FILE"
-        disown
-        STATE="ON"
-    fi
-    # KDE native OSD (bypasses notification suppression)
-    qdbus6 org.kde.plasmashell /org/kde/osdService \
-        org.kde.osdService.showText "notifications" "Do Not Disturb: ${STATE}" 2>/dev/null || true
-
-elif [[ "${XDG_CURRENT_DESKTOP:-}" == *"Cinnamon"* ]]; then
+if [[ "${XDG_CURRENT_DESKTOP:-}" == *"Cinnamon"* ]]; then
     current=$(gsettings get org.cinnamon.desktop.notifications display-notifications)
     if [ "$current" = "true" ]; then
         gsettings set org.cinnamon.desktop.notifications display-notifications false
@@ -118,6 +95,7 @@ PYEOF
     disown
 
 else
-    echo "Unsupported DE: ${XDG_CURRENT_DESKTOP:-unknown}" >&2
+    echo "Unsupported DE for this script: ${XDG_CURRENT_DESKTOP:-unknown}" >&2
+    echo "On KDE Plasma 6, configure DND shortcut in System Settings → Notifications." >&2
     exit 1
 fi

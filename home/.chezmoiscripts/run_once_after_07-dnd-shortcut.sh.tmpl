@@ -2,22 +2,23 @@
 #!/bin/bash
 set -euo pipefail
 
-# Register Super+Shift+D as a global shortcut for toggling Do Not Disturb.
-# Bare-metal Linux only — gsettings/kwriteconfig keys don't exist in WSLg.
+# Do Not Disturb keyboard-shortcut setup. Bare-metal Linux only —
+# gsettings/kglobalaccel keys don't exist in WSLg.
 
 if [[ "${XDG_CURRENT_DESKTOP:-}" == *"KDE"* ]]; then
-    # KDE Plasma: write the shortcut to kglobalshortcutsrc for the kde-shortcut-daemon component.
-    # The daemon (autostarted) calls doRegister which loads this shortcut from kglobalshortcutsrc.
-    kwriteconfig6 --file kglobalshortcutsrc \
-        --group "toggle-dnd" \
-        --key "_k_friendly_name" "Toggle Do Not Disturb"
-    kwriteconfig6 --file kglobalshortcutsrc \
-        --group "toggle-dnd" \
-        --key "toggle" "Meta+Shift+D,none,Toggle Do Not Disturb"
-    # Start the daemon for the current session (autostart handles future logins)
-    pkill -f "kde-shortcut-daemon.py" 2>/dev/null || true
-    nohup python3 "$HOME/bin/kde-shortcut-daemon.py" >>/tmp/kde-shortcut-daemon.log 2>&1 &
+    # KDE Plasma 6 has a built-in DND toggle shortcut managed by Plasma itself
+    # (System Settings → Notifications → "Configure Do Not Disturb"). Setting
+    # it from a script via kglobalaccel/kwriteconfig is unreliable on Plasma 6
+    # because plasmashell rewrites the binding back to "none" when it
+    # registers the action. Configure the shortcut once via the GUI.
+    #
+    # We do start the kde-dnd-watcher.py daemon for visual OSD feedback when
+    # the DND inhibit state changes, since Plasma's native action does not
+    # always surface user feedback.
+    pkill -f "kde-dnd-watcher.py" 2>/dev/null || true
+    nohup python3 "$HOME/bin/kde-dnd-watcher.py" >/dev/null 2>&1 &
     disown
+
 elif [[ "${XDG_CURRENT_DESKTOP:-}" == *"Cinnamon"* ]]; then
     # Cinnamon custom-list expects short names (e.g. "dnd-toggle"), NOT full dconf paths.
     # The keybinding data lives at the full dconf path but the list references just the name.

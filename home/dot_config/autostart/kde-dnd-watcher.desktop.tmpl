@@ -1,8 +1,8 @@
 {{- if .isLinuxBaremetal -}}
 [Desktop Entry]
 Type=Application
-Name=KDE Shortcut Daemon
-Exec={{ .chezmoi.homeDir }}/bin/kde-shortcut-daemon.py
+Name=KDE DND Watcher
+Exec={{ .chezmoi.homeDir }}/bin/kde-dnd-watcher.py
 NoDisplay=true
 StartupNotify=false
 X-KDE-autostart-phase=2
