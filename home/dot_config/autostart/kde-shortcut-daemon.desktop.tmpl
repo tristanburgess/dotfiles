@@ -1,0 +1,9 @@
+{{- if .isLinuxBaremetal -}}
+[Desktop Entry]
+Type=Application
+Name=KDE Shortcut Daemon
+Exec={{ .chezmoi.homeDir }}/bin/kde-shortcut-daemon.py
+NoDisplay=true
+StartupNotify=false
+X-KDE-autostart-phase=2
+{{- end -}}

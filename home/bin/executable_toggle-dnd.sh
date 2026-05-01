@@ -1,13 +1,42 @@
 #!/bin/bash
 set -euo pipefail
 
-current=$(gsettings get org.cinnamon.desktop.notifications display-notifications)
-if [ "$current" = "true" ]; then
-    gsettings set org.cinnamon.desktop.notifications display-notifications false
-    STATE="ON"
+KDE_DND_PID_FILE="/tmp/kde-dnd-pid"
+
+if [[ "${XDG_CURRENT_DESKTOP:-}" == *"KDE"* ]]; then
+    if [[ -f "$KDE_DND_PID_FILE" ]] && kill -0 "$(cat "$KDE_DND_PID_FILE")" 2>/dev/null; then
+        kill "$(cat "$KDE_DND_PID_FILE")"
+        rm -f "$KDE_DND_PID_FILE"
+        STATE="OFF"
+    else
+        rm -f "$KDE_DND_PID_FILE"
+        python3 -c "
+import dbus, dbus.mainloop.glib, gi.repository.GLib as GLib, signal
+dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+bus = dbus.SessionBus()
+notif = bus.get_object('org.kde.plasmashell', '/org/freedesktop/Notifications')
+iface = dbus.Interface(notif, 'org.freedesktop.Notifications')
+cookie = iface.Inhibit('toggle-dnd', 'Do Not Disturb', {})
+loop = GLib.MainLoop()
+signal.signal(signal.SIGTERM, lambda *_: (iface.UnInhibit(cookie), loop.quit()))
+loop.run()
+" &
+        echo $! > "$KDE_DND_PID_FILE"
+        disown
+        STATE="ON"
+    fi
+elif [[ "${XDG_CURRENT_DESKTOP:-}" == *"Cinnamon"* ]]; then
+    current=$(gsettings get org.cinnamon.desktop.notifications display-notifications)
+    if [ "$current" = "true" ]; then
+        gsettings set org.cinnamon.desktop.notifications display-notifications false
+        STATE="ON"
+    else
+        gsettings set org.cinnamon.desktop.notifications display-notifications true
+        STATE="OFF"
+    fi
 else
-    gsettings set org.cinnamon.desktop.notifications display-notifications true
-    STATE="OFF"
+    echo "Unsupported DE: ${XDG_CURRENT_DESKTOP:-unknown}" >&2
+    exit 1
 fi
 
 # Kill any existing DND popup

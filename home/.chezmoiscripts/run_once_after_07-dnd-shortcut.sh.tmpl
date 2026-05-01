@@ -3,34 +3,42 @@
 set -euo pipefail
 
 # Register Super+Shift+D as a global shortcut for toggling Do Not Disturb.
-# Bare-metal Linux/Cinnamon only — gsettings keys don't exist in WSLg.
-# Skip gracefully on non-Cinnamon DEs.
-if [[ "${XDG_CURRENT_DESKTOP:-}" != *"Cinnamon"* ]]; then
-    echo "Not Cinnamon DE, skipping DND shortcut"
-    exit 0
-fi
+# Bare-metal Linux only — gsettings/kwriteconfig keys don't exist in WSLg.
 
-# Cinnamon custom-list expects short names (e.g. "dnd-toggle"), NOT full dconf paths.
-# The keybinding data lives at the full dconf path but the list references just the name.
-SHORTCUT_NAME="dnd-toggle"
-SHORTCUT_PATH="/org/cinnamon/desktop/keybindings/custom-keybindings/${SHORTCUT_NAME}/"
-SCHEMA="org.cinnamon.desktop.keybindings.custom-keybinding"
+if [[ "${XDG_CURRENT_DESKTOP:-}" == *"KDE"* ]]; then
+    # KDE Plasma: write the shortcut to kglobalshortcutsrc for the kde-shortcut-daemon component.
+    # The daemon (autostarted) calls doRegister which loads this shortcut from kglobalshortcutsrc.
+    kwriteconfig6 --file kglobalshortcutsrc \
+        --group "toggle-dnd" \
+        --key "_k_friendly_name" "Toggle Do Not Disturb"
+    kwriteconfig6 --file kglobalshortcutsrc \
+        --group "toggle-dnd" \
+        --key "toggle" "Meta+Shift+D,none,Toggle Do Not Disturb"
+    # Start the daemon for the current session (autostart handles future logins)
+    pkill -f "kde-shortcut-daemon.py" 2>/dev/null || true
+    nohup python3 "$HOME/bin/kde-shortcut-daemon.py" >>/tmp/kde-shortcut-daemon.log 2>&1 &
+    disown
+elif [[ "${XDG_CURRENT_DESKTOP:-}" == *"Cinnamon"* ]]; then
+    # Cinnamon custom-list expects short names (e.g. "dnd-toggle"), NOT full dconf paths.
+    # The keybinding data lives at the full dconf path but the list references just the name.
+    SHORTCUT_NAME="dnd-toggle"
+    SHORTCUT_PATH="/org/cinnamon/desktop/keybindings/custom-keybindings/${SHORTCUT_NAME}/"
+    SCHEMA="org.cinnamon.desktop.keybindings.custom-keybinding"
 
-# Get the current list of custom shortcuts
-current=$(gsettings get org.cinnamon.desktop.keybindings custom-list)
-
-# Add our name if not already present
-if [[ "$current" != *"'$SHORTCUT_NAME'"* ]]; then
-    if [ "$current" = "@as []" ]; then
-        new="['$SHORTCUT_NAME']"
-    else
-        new="${current%]*}, '$SHORTCUT_NAME']"
+    current=$(gsettings get org.cinnamon.desktop.keybindings custom-list)
+    if [[ "$current" != *"'$SHORTCUT_NAME'"* ]]; then
+        if [ "$current" = "@as []" ]; then
+            new="['$SHORTCUT_NAME']"
+        else
+            new="${current%]*}, '$SHORTCUT_NAME']"
+        fi
+        gsettings set org.cinnamon.desktop.keybindings custom-list "$new"
     fi
-    gsettings set org.cinnamon.desktop.keybindings custom-list "$new"
-fi
 
-# Set the shortcut properties
-gsettings set "$SCHEMA:$SHORTCUT_PATH" name "Toggle Do Not Disturb"
-gsettings set "$SCHEMA:$SHORTCUT_PATH" command "$HOME/bin/toggle-dnd.sh"
-gsettings set "$SCHEMA:$SHORTCUT_PATH" binding "['<Super><Shift>d']"
+    gsettings set "$SCHEMA:$SHORTCUT_PATH" name "Toggle Do Not Disturb"
+    gsettings set "$SCHEMA:$SHORTCUT_PATH" command "$HOME/bin/toggle-dnd.sh"
+    gsettings set "$SCHEMA:$SHORTCUT_PATH" binding "['<Super><Shift>d']"
+else
+    echo "Unsupported DE (${XDG_CURRENT_DESKTOP:-unknown}), skipping DND shortcut"
+fi
 {{- end -}}
