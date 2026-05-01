@@ -1,0 +1,58 @@
+{{- if .isLinuxBaremetal -}}
+#!/bin/bash
+set -euo pipefail
+
+# Add a KWin window rule disabling focus-stealing prevention for kitty,
+# so click-to-focus from notifications (Claude Code's notify.sh) actually
+# raises the kitty window instead of just highlighting it in the taskbar.
+# KDE Plasma / KWin only — skip on other DEs.
+if [[ "${XDG_CURRENT_DESKTOP:-}" != *"KDE"* ]]; then
+    exit 0
+fi
+if ! command -v kwriteconfig6 >/dev/null 2>&1 \
+   || ! command -v kreadconfig6 >/dev/null 2>&1; then
+    exit 0
+fi
+
+RC=kwinrulesrc
+ID="claude-kitty-fsp-none"
+
+# Ensure the rule's UUID is in [General].rules (idempotent).
+existing=$(kreadconfig6 --file "$RC" --group General --key rules 2>/dev/null || true)
+case ",${existing}," in
+    *,${ID},*)
+        : "already present"
+        ;;
+    *)
+        if [ -n "$existing" ]; then
+            new="${existing},${ID}"
+        else
+            new="$ID"
+        fi
+        kwriteconfig6 --file "$RC" --group General --key rules "$new"
+        ;;
+esac
+
+# Recount [General].count from the actual rules list.
+count=$(kreadconfig6 --file "$RC" --group General --key rules 2>/dev/null \
+    | tr ',' '\n' | grep -c .)
+kwriteconfig6 --file "$RC" --group General --key count "$count"
+
+# Write the rule body.
+# fsplevel=0     → None (allow activation)
+# fsplevelrule=2 → Force (override app's request)
+# wmclassmatch=1 → Exact match on wmclass
+# wmclasscomplete=false → match class only, not class+name
+kwriteconfig6 --file "$RC" --group "$ID" --key Description \
+    "Disable focus stealing prevention for kitty (Claude Code click-to-focus)"
+kwriteconfig6 --file "$RC" --group "$ID" --key fsplevel 0
+kwriteconfig6 --file "$RC" --group "$ID" --key fsplevelrule 2
+kwriteconfig6 --file "$RC" --group "$ID" --key wmclass kitty
+kwriteconfig6 --file "$RC" --group "$ID" --key wmclasscomplete false
+kwriteconfig6 --file "$RC" --group "$ID" --key wmclassmatch 1
+
+# Reload KWin so the rule takes effect without logout.
+if command -v qdbus6 >/dev/null 2>&1; then
+    qdbus6 org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
+fi
+{{- end -}}
