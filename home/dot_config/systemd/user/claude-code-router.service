@@ -1,0 +1,18 @@
+[Unit]
+Description=Claude Code Router (tiered model routing proxy)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Secrets file written by the chezmoi bootstrap script from
+# ~/.claude/.credentials.json. Optional dash means "skip if missing".
+EnvironmentFile=-%h/.claude-code-router/secrets.env
+# mise shims live under ~/.local/share/mise/shims; PATH must include it.
+Environment=PATH=%h/.local/share/mise/shims:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.local/share/mise/shims/ccr start
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target

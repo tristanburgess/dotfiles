@@ -21,6 +21,39 @@ All config changes (shell, kitty, Claude, mise, etc.) go in the chezmoi source a
 - **Clean up after yourself.** When editing existing code, remove imports/variables/functions that your changes made unused. Don't touch pre-existing dead code unless asked.
 - **Prefer concise code.** If you wrote 200 lines and it could be 50, rewrite before presenting.
 
+{{ if (get . "useCcr" | default true) -}}
+# Model Tiering
+
+A local proxy (`claude-code-router` on `127.0.0.1:3456`) routes each Claude Code call by requested model name and estimated context size:
+
+| Tier | Backend | Model | Triggers |
+|------|---------|-------|----------|
+| Local | Ollama (Vulkan, AMD 890M) | `qwen3-coder:30b` (MoE 30B/3.3B-active) | `model: haiku`. `background`. `longContext`. Skill local-mode toggle. |
+| Cloud Sonnet | Anthropic API | `claude-sonnet-4-6` | Main session default. `model: sonnet`. `webSearch`. |
+| Cloud Opus | Anthropic API | `claude-opus-4-7` | `model: opus`. `think` channel. |
+
+Local requests route to one of two models based on content signals:
+
+| Local model | Lane | Signals |
+|-------------|------|---------|
+| `qwen3-coder:30b` | code | `.go` `.py` `.ts` etc. file refs; default |
+| `gemma3:27b` | prose | `.md` `.txt` refs, commit messages, Slack, design docs |
+
+Inline override: add `@prose` or `@code` to any message to force a specific local model.
+
+**When invoking the `Plan` subagent, always pass `model: "opus"`** so planning lands on cloud Opus. Other subagents (Explore, cavecrew-*, prose-review) inherit `haiku` and route local automatically — leave them unset.
+
+**Skill local-mode toggle** (for Notion-heavy maintenance work via `/health`, `/guitar-tutor` etc.):
+
+```
+/model ollama,gemma3:27b                # switch main session to local (prose lane)
+... invoke skill ...
+/model anthropic,claude-sonnet-4-6      # switch back
+```
+
+Use cloud Sonnet for cross-log analysis, training-plan design, schema restructures, and prose generation. Use local for mechanical row-level Notion edits and bulk operations.
+{{- end }}
+
 # External-Facing Text
 
 **Always load the `{{ .skillSyntax }}prose-craft` skill before writing ANY text for outside consumption** —

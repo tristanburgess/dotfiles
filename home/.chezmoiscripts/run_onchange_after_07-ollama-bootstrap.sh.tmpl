@@ -1,0 +1,84 @@
+{{- if and .isLinuxBaremetal .installClaude (get . "useCcr" | default true) -}}
+#!/bin/bash
+set -euo pipefail
+
+# Ollama + local-LLM bootstrap for the tiered-model routing setup.
+# Re-runs when this script changes.
+#
+# Steps:
+#   1. Install Ollama (if missing or service unit not registered).
+#   2. Drop a systemd override that turns on the Vulkan backend so the
+#      AMD Radeon 890M iGPU is used (ROCm support for Strix Point is
+#      unreliable; Vulkan is the right path).
+#   3. Enable + start the service.
+#   4. Pull two local models:
+#        - qwen3-coder:30b    (~19 GB MoE 30B/3.3B-active)
+#          Code lane: RL-tuned for SWE-Bench multi-step agentic workflows.
+#          Routes code files, tool-heavy subagents, default local work.
+#        - gemma3:27b         (~17 GB)
+#          Prose lane: Google-trained general model, strong natural language.
+#          Routes .md/.txt files, commit messages, Slack/design-doc tasks.
+
+CODE_MODEL="qwen3-coder:30b"
+PROSE_MODEL="gemma3:27b"
+
+ollama_service_registered() {
+    systemctl list-unit-files ollama.service >/dev/null 2>&1
+}
+
+# Install (or re-run to finish a partial/cancelled install). Re-runs if the
+# binary is missing OR if the systemd service unit was never registered.
+if ! command -v ollama >/dev/null 2>&1 || ! ollama_service_registered; then
+    printf "Installing / completing Ollama install...\n"
+    curl -fsSL https://ollama.com/install.sh | sh
+fi
+
+# Vulkan backend systemd drop-in. Idempotent: only writes when contents change.
+OVERRIDE_DIR="/etc/systemd/system/ollama.service.d"
+OVERRIDE_FILE="$OVERRIDE_DIR/vulkan.conf"
+DESIRED_OVERRIDE='[Service]
+Environment="OLLAMA_VULKAN=1"
+'
+
+if ! sudo test -f "$OVERRIDE_FILE" || \
+   ! sudo cmp -s <(printf '%s' "$DESIRED_OVERRIDE") "$OVERRIDE_FILE"; then
+    printf "Writing Ollama Vulkan systemd override...\n"
+    sudo mkdir -p "$OVERRIDE_DIR"
+    printf '%s' "$DESIRED_OVERRIDE" | sudo tee "$OVERRIDE_FILE" >/dev/null
+fi
+
+# Always reload + enable + restart once the service unit exists.
+if ollama_service_registered; then
+    sudo systemctl daemon-reload
+    sudo systemctl enable ollama.service 2>/dev/null || true
+    sudo systemctl restart ollama.service
+else
+    printf "⚠  ollama.service still not registered after install. Try running:\n"
+    printf "   curl -fsSL https://ollama.com/install.sh | sh\n" >&2
+    exit 1
+fi
+
+# Wait for the daemon socket (max ~30s).
+printf "Waiting for Ollama daemon..."
+for _ in $(seq 1 30); do
+    if curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
+        printf " ready.\n"
+        break
+    fi
+    sleep 1
+    printf "."
+done
+
+pull_if_missing() {
+    local model="$1"
+    if ! ollama list 2>/dev/null | awk 'NR>1 {print $1}' | grep -qx "$model"; then
+        printf "Pulling %s...\n" "$model"
+        ollama pull "$model"
+    fi
+}
+
+pull_if_missing "$CODE_MODEL"
+pull_if_missing "$PROSE_MODEL"
+
+printf "Ollama ready. Models: %s, %s. Vulkan backend enabled.\n" "$CODE_MODEL" "$PROSE_MODEL"
+{{- end -}}
