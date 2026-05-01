@@ -8,6 +8,8 @@ claude-code = "2.1.119"
 difftastic = "0.68.0"
 # renovate: packageName=cli/cli datasource=github-releases
 gh = "2.91.0"
+# renovate: packageName=googleworkspace/cli datasource=github-releases
+"github:googleworkspace/cli" = "0.22.5"
 # renovate: go
 go = "1.26.2"
 # renovate: packageName=golangci/golangci-lint datasource=github-releases
