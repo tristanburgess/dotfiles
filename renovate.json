@@ -45,6 +45,28 @@
     {
       "matchUpdateTypes": ["major"],
       "labels": ["major-update"]
+    },
+    {
+      "description": "Annotated mise tools are handled by the custom regex manager above. Disable the built-in mise manager for them to prevent duplicate PRs (e.g. #93 and #94 both bumped difftastic 0.68.0 -> 0.69.0). Tools listed are those that carry a `# renovate: packageName=... datasource=...` annotation in home/dot_config/mise/config.toml. Tools without that annotation (bun, go, jq, gcloud, java, node) keep the built-in mise manager.",
+      "matchManagers": ["mise"],
+      "matchPackageNames": [
+        "claude-code",
+        "difftastic",
+        "gh",
+        "github:googleworkspace/cli",
+        "golangci-lint",
+        "jujutsu",
+        "neovim",
+        "rust",
+        "starship",
+        "uv",
+        "terraform",
+        "zoxide",
+        "chezmoi",
+        "awscli",
+        "azure-cli"
+      ],
+      "enabled": false
     }
   ]
 }
