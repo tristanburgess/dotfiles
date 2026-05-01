@@ -35,9 +35,6 @@ zoxide = "0.9.9"
 # Chezmoi: bootstrapped by winget on Windows before mise exists
 # renovate: packageName=twpayne/chezmoi datasource=github-releases
 chezmoi = { version = "2.70.2", os = ["linux"] }
-# Kitty: no Windows build (runs in WSL via WSLg)
-# renovate: packageName=kovidgoyal/kitty datasource=github-releases
-kitty = { version = "0.46.2", os = ["linux"] }
 # Cloud CLIs: installed via winget on Windows
 # renovate: packageName=aws/aws-cli datasource=github-releases
 awscli = { version = "2.34.37", os = ["linux"] }
@@ -46,5 +43,3 @@ azure-cli = { version = "2.85.0", os = ["linux"] }
 # renovate: gcloud
 gcloud = { version = "564.0.0", os = ["linux"] }
 
-[tool_alias]
-kitty = "github:kovidgoyal/kitty"

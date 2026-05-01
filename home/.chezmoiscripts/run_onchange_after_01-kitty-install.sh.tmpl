@@ -1,0 +1,12 @@
+{{- if .isLinuxBaremetal -}}
+#!/bin/bash
+# renovate: packageName=kovidgoyal/kitty datasource=github-releases
+# kitty-version: 0.46.2
+set -euo pipefail
+
+curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin installer=version-0.46.2 launch=n
+
+mkdir -p "$HOME/.local/bin"
+ln -sf "$HOME/.local/kitty.app/bin/kitty" "$HOME/.local/bin/kitty"
+ln -sf "$HOME/.local/kitty.app/bin/kitten" "$HOME/.local/bin/kitten"
+{{- end -}}

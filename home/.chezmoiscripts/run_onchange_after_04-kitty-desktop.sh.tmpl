@@ -1,14 +1,13 @@
 {{- if .isLinuxBaremetal -}}
 #!/bin/bash
-# hash: {{ include "dot_config/mise/config.toml" | sha256sum }}
+# hash: {{ include ".chezmoiscripts/run_onchange_after_01-kitty-install.sh.tmpl" | sha256sum }}
 set -euo pipefail
 
-# Patch kitty .desktop files so GNOME can find the mise-managed kitty.
+# Patch kitty .desktop files so GNOME can find the kitty install.
 # Bare-metal Linux only — WSLg auto-registers kitty.desktop, no patching needed.
-eval "$("$HOME/.local/bin/mise" activate bash)"
 
-KITTY_INSTALL="$(mise where kitty)"
-KITTY_SHIM="$HOME/.local/share/mise/shims/kitty"
+KITTY_INSTALL="$HOME/.local/kitty.app"
+KITTY_SHIM="$HOME/.local/bin/kitty"
 
 mkdir -p "$HOME/.local/share/applications"
 for desktop in kitty.desktop kitty-open.desktop; do

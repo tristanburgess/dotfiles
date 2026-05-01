@@ -1,0 +1,17 @@
+{{- if ne .chezmoi.os "darwin" -}}
+#!/bin/bash
+set -euo pipefail
+
+TARBALL="/tmp/prose-craft-registers.tar.gz"
+[[ -f "$TARBALL" ]] || exit 0
+
+DEST="$HOME/.claude/skills/prose-craft"
+mkdir -p "$DEST"
+
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+tar -xzf "$TARBALL" -C "$STAGE"
+
+cp -r "$STAGE/prose-craft-registers/." "$DEST/"
+printf "Synced prose-craft registers to %s\n" "$DEST"
+{{- end -}}
