@@ -1,0 +1,34 @@
+{{- if .isLinuxBaremetal -}}
+#!/bin/bash
+set -euo pipefail
+
+# renovate: packageName=googleworkspace/cli datasource=github-releases
+GWS_VERSION="v0.22.5"
+
+ARCH=$(uname -m)
+case "$ARCH" in
+  x86_64)  GWS_ARCH="x86_64-unknown-linux-gnu" ;;
+  aarch64) GWS_ARCH="aarch64-unknown-linux-gnu" ;;
+  *)       echo "Unsupported arch: $ARCH"; exit 1 ;;
+esac
+
+echo "Installing gws ${GWS_VERSION}..."
+
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "${TMPDIR}"' EXIT
+
+eval "$("$HOME/.local/bin/mise" activate bash)"
+
+gh release download "${GWS_VERSION}" \
+    --repo googleworkspace/cli \
+    --pattern "google-workspace-cli-${GWS_ARCH}.tar.gz" \
+    --dir "${TMPDIR}"
+
+tar -xzf "${TMPDIR}/google-workspace-cli-${GWS_ARCH}.tar.gz" -C "${TMPDIR}"
+
+mkdir -p "$HOME/bin"
+mv "${TMPDIR}/gws" "$HOME/bin/gws"
+chmod +x "$HOME/bin/gws"
+
+echo "gws ${GWS_VERSION} installed to ~/bin/gws"
+{{- end -}}
