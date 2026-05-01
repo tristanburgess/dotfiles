@@ -25,7 +25,7 @@ node = "lts"
 # renovate: packageName=rust-lang/rust datasource=github-releases
 rust = "1.95.0"
 # renovate: packageName=starship/starship datasource=github-releases
-starship = "1.25.0"
+starship = "1.25.1"
 # renovate: packageName=astral-sh/uv datasource=github-releases
 uv = "0.11.7"
 # renovate: packageName=hashicorp/terraform datasource=github-releases
