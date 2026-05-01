@@ -1,13 +1,24 @@
 #!/bin/bash
-# Claude Code notification with response preview, click-to-focus, and logo
+# Claude Code notification with response preview, click-to-focus, and logo.
 # Triggered by Stop and Notification hooks.
-# Linux bare-metal: only notifies if terminal is unfocused (or user idle).
-# WSL2: always fires (WSLg's RAIL compositor hides root-window props).
-# Windows (Git Bash): uses BurntToast PowerShell module if installed.
+#
+# Linux/macOS in kitty: focus-skip + click-to-focus + auto-dismiss via
+#   kitty's remote control protocol (display-server agnostic).
+#   Notification emission uses `notify-send -A` so the dbus connection
+#   stays open while waiting for the action — Plasma 6.5 silently expires
+#   action-bearing notifications when the sender disconnects, so a one-shot
+#   `gdbus call Notify` never works for click-to-focus on Plasma.
+# Linux outside kitty: dumb notify-send (always fires, no smart features).
+# WSL2: notify-send relays to Windows toast via WSLg.
+# Windows (Git Bash): BurntToast PowerShell module if installed.
+
+set -u
 
 ICON="$HOME/.claude/claude-logo.png"
+# Allow filesystem socket (preferred) or abstract (legacy). Reject tcp:.
+KITTY_LISTEN_RE='^unix:(/[^[:space:]]+|@kitty-[0-9]+)$'
 
-# ── Parse hook input (shared) ───────────────────────────────────
+# ── Parse hook input ────────────────────────────────────────────
 INPUT=$(cat)
 
 HOOK_EVENT=$(jq -r '.hook_event_name // ""' <<< "$INPUT")
@@ -30,154 +41,142 @@ else
     RAW="${LAST_MSG:-Response ready}"
 fi
 
-# ── Helpers (shared) ────────────────────────────────────────────
-pango_escape() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
+MESSAGE=$(printf '%.300s' "$RAW")
 
-gvariant_escape() {
-    local s="$1"
-    s="${s//\\/\\\\}"
-    s="${s//\"/\\\"}"
-    s="${s//\'/\\\'}"
-    s="${s//$'\n'/\\n}"
-    s="${s//$'\t'/\\t}"
-    printf '"%s"' "$s"
+# ── Kitty env resolution ────────────────────────────────────────
+# KITTY_LISTEN_ON / KITTY_WINDOW_ID are exported in kitty subshells.
+# Hooks usually inherit them, but fall back to /proc walk in case
+# the harness strips env.
+read_proc_env() {
+    local pid="$1" key="$2"
+    tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null \
+        | sed -n "s/^${key}=//p" | head -1
 }
 
-MESSAGE=$(pango_escape "$(printf '%.300s' "$RAW")")
-
-# ── Linux bare-metal: gdbus + X11 focus tracking + auto-dismiss ─
-notify_linux() {
-    # Hooks don't inherit the shell's env, so fall back to reading
-    # WINDOWID from the ancestor Claude process's /proc/PID/environ.
-    local WINDOW_ID=""
-    if [ -n "${WINDOWID:-}" ] && [ "$WINDOWID" -gt 0 ] 2>/dev/null; then
-        WINDOW_ID=$(printf "0x%08x" "$WINDOWID")
-    else
-        local _pid=$$
-        while [ "$_pid" -gt 1 ]; do
-            if [ "$(ps -o comm= -p "$_pid" 2>/dev/null)" = "claude" ]; then
-                local _wid
-                _wid=$(tr '\0' '\n' < "/proc/$_pid/environ" 2>/dev/null \
-                    | sed -n 's/^WINDOWID=//p' | head -1)
-                [ -n "$_wid" ] && [ "$_wid" -gt 0 ] 2>/dev/null \
-                    && WINDOW_ID=$(printf "0x%08x" "$_wid")
-                break
-            fi
-            _pid=$(ps -o ppid= -p "$_pid" 2>/dev/null | tr -d ' ')
-        done
-    fi
-
-    # Skip if terminal is focused and user is active
-    if [ -n "$WINDOW_ID" ]; then
-        local ACTIVE
-        ACTIVE=$(xprop -root _NET_ACTIVE_WINDOW 2>/dev/null | awk '{print $NF}')
-        if [ "$(printf '%x' "$ACTIVE" 2>/dev/null)" = "$(printf '%x' "$WINDOW_ID" 2>/dev/null)" ]; then
-            local IDLE_MS
-            IDLE_MS=$(xprintidle 2>/dev/null || echo 0)
-            [ "$IDLE_MS" -lt 15000 ] && return 0
+resolve_from_claude_env() {
+    local key="$1" pid=$$
+    while [ "$pid" -gt 1 ]; do
+        if [ "$(ps -o comm= -p "$pid" 2>/dev/null)" = "claude" ]; then
+            read_proc_env "$pid" "$key"
+            return 0
         fi
+        pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+        [ -z "$pid" ] && break
+    done
+    return 1
+}
+
+KITTY_LISTEN_ON_RESOLVED="${KITTY_LISTEN_ON:-$(resolve_from_claude_env KITTY_LISTEN_ON || true)}"
+KITTY_WINDOW_ID_RESOLVED="${KITTY_WINDOW_ID:-$(resolve_from_claude_env KITTY_WINDOW_ID || true)}"
+
+[[ "$KITTY_LISTEN_ON_RESOLVED" =~ $KITTY_LISTEN_RE ]] || KITTY_LISTEN_ON_RESOLVED=""
+[[ "$KITTY_WINDOW_ID_RESOLVED" =~ ^[0-9]+$ ]] || KITTY_WINDOW_ID_RESOLVED=""
+
+# ── notify_kitty: primary path with full feature set ───────────
+notify_kitty() {
+    local listen="$KITTY_LISTEN_ON_RESOLVED"
+    local win_id="$KITTY_WINDOW_ID_RESOLVED"
+
+    local ls_json
+    ls_json=$(timeout 2 kitty @ --to "$listen" ls 2>/dev/null) || {
+        notify_dumb
+        return
+    }
+
+    local title="" focused=""
+    if [ -n "$win_id" ]; then
+        title=$(jq -r --argjson w "$win_id" \
+            '.[] | .tabs[] | .windows[] | select(.id == $w) | .title // ""' \
+            <<< "$ls_json" 2>/dev/null | head -1)
+        focused=$(jq -r --argjson w "$win_id" \
+            '.[] | .tabs[] | .windows[] | select(.id == $w) | .is_focused // false' \
+            <<< "$ls_json" 2>/dev/null | head -1)
     fi
 
-    # Extract session name from window title
-    local SESSION=""
-    if [ -n "$WINDOW_ID" ]; then
-        local TITLE
-        TITLE=$(wmctrl -l | grep -i "$WINDOW_ID" | sed 's/^[^ ]* *[^ ]* *[^ ]* //')
-        SESSION=$(pango_escape "$(printf '%s' "$TITLE" | sed 's/^[^a-zA-Z0-9]*//')")
-    fi
+    [ "$focused" = "true" ] && return 0
 
-    local BODY
-    if [ -n "$SESSION" ]; then
-        BODY="<b>${SESSION}</b>
-${MESSAGE}"
+    local session=""
+    [ -n "$title" ] && session=$(printf '%s' "$title" | sed 's/^[^a-zA-Z0-9]*//')
+
+    local body
+    if [ -n "$session" ]; then
+        body="${session}: ${MESSAGE}"
     else
-        BODY="$MESSAGE"
+        body="$MESSAGE"
     fi
 
-    local NOTIF_ID
-    NOTIF_ID=$(gdbus call --session \
-        --dest org.freedesktop.Notifications \
-        --object-path /org/freedesktop/Notifications \
-        --method org.freedesktop.Notifications.Notify \
-        -- '"Claude Code"' 0 "$(gvariant_escape "$ICON")" '"Claude Code"' \
-        "$(gvariant_escape "$BODY")" \
-        '["default", "Open Terminal"]' '{"urgency": <byte 2>}' \
-        -1 2>/dev/null | grep -oP 'uint32 \K\d+')
-
-    if [ -n "$NOTIF_ID" ]; then
-        (
-            set -m
-
-            gdbus monitor --session \
-                --dest org.freedesktop.Notifications \
-                --object-path /org/freedesktop/Notifications 2>/dev/null |
-            while IFS= read -r line; do
-                case "$line" in
-                    *"ActionInvoked (uint32 $NOTIF_ID,"*)
-                        [ -n "$WINDOW_ID" ] && wmctrl -i -a "$WINDOW_ID" 2>/dev/null
-                        break ;;
-                    *"NotificationClosed (uint32 $NOTIF_ID,"*)
-                        break ;;
-                esac
-            done &
-            MONITOR_PID=$!
-
-            if [ -n "$WINDOW_ID" ]; then
-                WIN_NORM=$(printf "%x" "$WINDOW_ID" 2>/dev/null)
-                for _ in {1..150}; do
-                    sleep 2
-                    kill -0 "$MONITOR_PID" 2>/dev/null || break
-                    CURR=$(xprop -root _NET_ACTIVE_WINDOW 2>/dev/null | awk '{print $NF}')
-                    CURR_NORM=$(printf "%x" "$CURR" 2>/dev/null)
-                    IDLE_MS=$(xprintidle 2>/dev/null || echo 999999)
-                    if [ "$CURR_NORM" = "$WIN_NORM" ] && [ "$IDLE_MS" -lt 5000 ]; then
-                        gdbus call --session \
-                            --dest org.freedesktop.Notifications \
-                            --object-path /org/freedesktop/Notifications \
-                            --method org.freedesktop.Notifications.CloseNotification \
-                            "$NOTIF_ID" >/dev/null 2>&1
-                        break
-                    fi
-                done
-            fi
-
-            kill -- -"$MONITOR_PID" 2>/dev/null
-            wait "$MONITOR_PID" 2>/dev/null
-        ) &
-        disown
-    else
-        # Fallback: notify-send without auto-dismiss (if gdbus unavailable)
-        (
-            ACTION=$(notify-send \
+    # Background subshell: emit via notify-send -A (blocks until click or
+    # programmatic close). Race notify-send's stdout (action key) against
+    # focus-poll on the kitty window; on focus regain, kill notify-send to
+    # close the toast. On click, raise the kitty window.
+    (
+        # coproc gives us a bidirectional pipe to notify-send so we can
+        # read its action stdout non-blockingly while it blocks on --wait.
+        # 2>/dev/null on stderr to avoid coproc warnings about stdin.
+        coproc NS {
+            notify-send \
                 --urgency=critical \
                 --app-name="Claude Code" \
                 --icon="$ICON" \
                 --action="default=Open Terminal" \
                 'Claude Code' \
-                "$BODY" 2>/dev/null)
+                "$body" 2>/dev/null
+        }
+        local ns_pid="${NS_PID:-}"
+        local in_fd="${NS[0]:-}"
 
-            if [ "$ACTION" = "default" ] && [ -n "$WINDOW_ID" ]; then
-                wmctrl -i -a "$WINDOW_ID" 2>/dev/null
+        if [ -z "$ns_pid" ] || [ -z "$in_fd" ]; then
+            return 0
+        fi
+
+        local action=""
+        local i max=3000  # 0.1s/iter * 3000 = 5min
+        for ((i = 1; i <= max; i++)); do
+            # Try to read action key (non-blocking up to 0.1s)
+            if read -t 0.1 -u "$in_fd" line 2>/dev/null; then
+                action="$line"
+                break
             fi
-        ) &
-        disown
-    fi
+            # If notify-send died (closed by daemon, killed, etc.), drain & exit
+            if ! kill -0 "$ns_pid" 2>/dev/null; then
+                read -t 0.5 -u "$in_fd" line 2>/dev/null && action="$line"
+                break
+            fi
+            # Focus-poll every 2s, after 5s grace period
+            if (( i > 50 && i % 20 == 0 )); then
+                local poll
+                poll=$(timeout 2 kitty @ --to "$listen" ls 2>/dev/null) || continue
+                local now_focused
+                now_focused=$(jq -r --argjson w "$win_id" \
+                    '.[] | .tabs[] | .windows[] | select(.id == $w) | .is_focused // false' \
+                    <<< "$poll" 2>/dev/null | head -1)
+                if [ "$now_focused" = "true" ]; then
+                    kill "$ns_pid" 2>/dev/null
+                    break
+                fi
+            fi
+        done
+
+        wait "$ns_pid" 2>/dev/null
+
+        if [ "$action" = "default" ] && [ -n "$win_id" ]; then
+            timeout 2 kitty @ --to "$listen" \
+                focus-window --match "id:$win_id" \
+                >/dev/null 2>&1 || true
+        fi
+    ) &
+    disown
 }
 
-# ── WSL2: notify-send relays to Windows toast via WSLg ──────────
-notify_wsl() {
-    # WSLg's RAIL compositor doesn't expose _NET_ACTIVE_WINDOW or
-    # _NET_CLIENT_LIST on the root window — `xprop -root` is empty and
-    # `wmctrl -l` errors. So: no focus tracking, no window resolution,
-    # no auto-dismiss loop. Always fire.
-    # Derive session context from PWD (can't resolve window title without X11).
-    local SESSION
-    SESSION=$(basename "$(pwd)")
-    local BODY
-    if [ -n "$SESSION" ] && [ "$SESSION" != "/" ]; then
-        BODY="${SESSION}: ${MESSAGE}"
+# ── notify_dumb: notify-send only, no focus tracking ───────────
+notify_dumb() {
+    local session
+    session=$(basename "$(pwd)")
+    local body
+    if [ -n "$session" ] && [ "$session" != "/" ]; then
+        body="${session}: ${MESSAGE}"
     else
-        BODY="$MESSAGE"
+        body="$MESSAGE"
     fi
     (
         notify-send \
@@ -185,17 +184,21 @@ notify_wsl() {
             --app-name="Claude Code" \
             --icon="$ICON" \
             'Claude Code' \
-            "$BODY" 2>/dev/null || true
+            "$body" 2>/dev/null || true
     ) &
     disown
 }
 
-# ── Windows (Git Bash): BurntToast or silent fallback ───────────
+# ── notify_wsl: WSLg path ──────────────────────────────────────
+notify_wsl() {
+    notify_dumb
+}
+
+# ── notify_windows: Git Bash + BurntToast ──────────────────────
 notify_windows() {
     if ! command -v powershell.exe >/dev/null 2>&1; then
         return 0
     fi
-    # Pass body via stdin to avoid bash expansion mangling $, backticks, etc.
     printf '%s' "$RAW" | powershell.exe -NoProfile -Command '
         $body = [Console]::In.ReadToEnd()
         if (Get-Module -ListAvailable -Name BurntToast) {
@@ -207,13 +210,21 @@ notify_windows() {
 }
 
 # ── Dispatch ────────────────────────────────────────────────────
+if [ -n "$KITTY_LISTEN_ON_RESOLVED" ] && command -v kitty >/dev/null 2>&1; then
+    notify_kitty
+    exit 0
+fi
+
 case "$(uname -s)" in
     Linux*)
         if grep -qiE 'microsoft|wsl' /proc/sys/kernel/osrelease 2>/dev/null; then
             notify_wsl
         else
-            notify_linux
+            notify_dumb
         fi
+        ;;
+    Darwin*)
+        notify_dumb
         ;;
     MINGW*|MSYS*|CYGWIN*)
         notify_windows
