@@ -1,20 +1,57 @@
 #!/bin/bash
 set -euo pipefail
 
-current=$(gsettings get org.cinnamon.desktop.notifications display-notifications)
-if [ "$current" = "true" ]; then
-    gsettings set org.cinnamon.desktop.notifications display-notifications false
-    STATE="ON"
-else
-    gsettings set org.cinnamon.desktop.notifications display-notifications true
-    STATE="OFF"
-fi
+# Toggle Do Not Disturb on Cinnamon (gsettings) or KDE Plasma 6 (notification
+# inhibit via DBus). Bind this script to a global keyboard shortcut:
+#   - Cinnamon: handled by run_once_after_07-dnd-shortcut.sh.tmpl
+#   - KDE Plasma 6: configure manually under System Settings → Custom Shortcuts
+#     (Plasma's native "toggle do not disturb" action has bug 436415: shortcut
+#      stops working after closing System Settings)
 
-# Kill any existing DND popup
-pkill -f "dnd-popup-proc" 2>/dev/null || true
+KDE_DND_PID_FILE="/tmp/kde-dnd-pid"
 
-# Show a themed popup with fade animation using GTK
-python3 - "$STATE" "dnd-popup-proc" <<'PYEOF' &
+if [[ "${XDG_CURRENT_DESKTOP:-}" == *"KDE"* ]]; then
+    if [[ -f "$KDE_DND_PID_FILE" ]] && kill -0 "$(cat "$KDE_DND_PID_FILE")" 2>/dev/null; then
+        kill "$(cat "$KDE_DND_PID_FILE")"
+        rm -f "$KDE_DND_PID_FILE"
+        STATE="OFF"
+    else
+        rm -f "$KDE_DND_PID_FILE"
+        # Background Python holds the DBus Inhibit cookie open until killed.
+        # Inhibit is tied to the caller's DBus connection lifetime; a one-shot
+        # script would release immediately on exit.
+        python3 -c "
+import dbus, dbus.mainloop.glib, gi.repository.GLib as GLib, signal
+dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+bus = dbus.SessionBus()
+notif = bus.get_object('org.kde.plasmashell', '/org/freedesktop/Notifications')
+iface = dbus.Interface(notif, 'org.freedesktop.Notifications')
+cookie = iface.Inhibit('toggle-dnd', 'Do Not Disturb', {})
+loop = GLib.MainLoop()
+signal.signal(signal.SIGTERM, lambda *_: (iface.UnInhibit(cookie), loop.quit()))
+loop.run()
+" &
+        echo $! > "$KDE_DND_PID_FILE"
+        disown
+        STATE="ON"
+    fi
+    # KDE native OSD; bypasses notification suppression.
+    qdbus6 org.kde.plasmashell /org/kde/osdService \
+        org.kde.osdService.showText "notifications" "Do Not Disturb: ${STATE}" 2>/dev/null || true
+
+elif [[ "${XDG_CURRENT_DESKTOP:-}" == *"Cinnamon"* ]]; then
+    current=$(gsettings get org.cinnamon.desktop.notifications display-notifications)
+    if [ "$current" = "true" ]; then
+        gsettings set org.cinnamon.desktop.notifications display-notifications false
+        STATE="ON"
+    else
+        gsettings set org.cinnamon.desktop.notifications display-notifications true
+        STATE="OFF"
+    fi
+
+    # Cinnamon themed GTK popup
+    pkill -f "dnd-popup-proc" 2>/dev/null || true
+    python3 - "$STATE" "dnd-popup-proc" <<'PYEOF' &
 import gi, sys
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib
@@ -88,4 +125,9 @@ win.move(geom.x, geom.y)
 GLib.timeout_add(FADE_INTERVAL, tick)
 Gtk.main()
 PYEOF
-disown
+    disown
+
+else
+    echo "Unsupported DE: ${XDG_CURRENT_DESKTOP:-unknown}" >&2
+    exit 1
+fi

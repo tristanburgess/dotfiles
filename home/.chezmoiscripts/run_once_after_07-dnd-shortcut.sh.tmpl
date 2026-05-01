@@ -2,35 +2,50 @@
 #!/bin/bash
 set -euo pipefail
 
-# Register Super+Shift+D as a global shortcut for toggling Do Not Disturb.
-# Bare-metal Linux/Cinnamon only — gsettings keys don't exist in WSLg.
-# Skip gracefully on non-Cinnamon DEs.
-if [[ "${XDG_CURRENT_DESKTOP:-}" != *"Cinnamon"* ]]; then
-    echo "Not Cinnamon DE, skipping DND shortcut"
-    exit 0
-fi
+# Register a global shortcut for toggling Do Not Disturb. Bare-metal Linux
+# only — gsettings keys don't exist in WSLg.
 
-# Cinnamon custom-list expects short names (e.g. "dnd-toggle"), NOT full dconf paths.
-# The keybinding data lives at the full dconf path but the list references just the name.
-SHORTCUT_NAME="dnd-toggle"
-SHORTCUT_PATH="/org/cinnamon/desktop/keybindings/custom-keybindings/${SHORTCUT_NAME}/"
-SCHEMA="org.cinnamon.desktop.keybindings.custom-keybinding"
+if [[ "${XDG_CURRENT_DESKTOP:-}" == *"Cinnamon"* ]]; then
+    # Cinnamon custom-list expects short names (e.g. "dnd-toggle"), NOT full dconf paths.
+    # The keybinding data lives at the full dconf path but the list references just the name.
+    SHORTCUT_NAME="dnd-toggle"
+    SHORTCUT_PATH="/org/cinnamon/desktop/keybindings/custom-keybindings/${SHORTCUT_NAME}/"
+    SCHEMA="org.cinnamon.desktop.keybindings.custom-keybinding"
 
-# Get the current list of custom shortcuts
-current=$(gsettings get org.cinnamon.desktop.keybindings custom-list)
-
-# Add our name if not already present
-if [[ "$current" != *"'$SHORTCUT_NAME'"* ]]; then
-    if [ "$current" = "@as []" ]; then
-        new="['$SHORTCUT_NAME']"
-    else
-        new="${current%]*}, '$SHORTCUT_NAME']"
+    current=$(gsettings get org.cinnamon.desktop.keybindings custom-list)
+    if [[ "$current" != *"'$SHORTCUT_NAME'"* ]]; then
+        if [ "$current" = "@as []" ]; then
+            new="['$SHORTCUT_NAME']"
+        else
+            new="${current%]*}, '$SHORTCUT_NAME']"
+        fi
+        gsettings set org.cinnamon.desktop.keybindings custom-list "$new"
     fi
-    gsettings set org.cinnamon.desktop.keybindings custom-list "$new"
-fi
 
-# Set the shortcut properties
-gsettings set "$SCHEMA:$SHORTCUT_PATH" name "Toggle Do Not Disturb"
-gsettings set "$SCHEMA:$SHORTCUT_PATH" command "$HOME/bin/toggle-dnd.sh"
-gsettings set "$SCHEMA:$SHORTCUT_PATH" binding "['<Super><Shift>d']"
+    gsettings set "$SCHEMA:$SHORTCUT_PATH" name "Toggle Do Not Disturb"
+    gsettings set "$SCHEMA:$SHORTCUT_PATH" command "$HOME/bin/toggle-dnd.sh"
+    gsettings set "$SCHEMA:$SHORTCUT_PATH" binding "['<Super><Shift>d']"
+
+elif [[ "${XDG_CURRENT_DESKTOP:-}" == *"KDE"* ]]; then
+    # KDE Plasma 6: configure the shortcut manually.
+    # System Settings → Custom Shortcuts → Add Command → bind Meta+Shift+D
+    # to "$HOME/bin/toggle-dnd.sh"
+    #
+    # Plasma's native "toggle do not disturb" action has KDE bug 436415:
+    # the shortcut stops working after closing the System Settings window.
+    # Programmatic kglobalaccel/kwriteconfig configuration of plasmashell
+    # actions is also unreliable: plasmashell rewrites our binding back to
+    # "none" when it registers the action. Custom Shortcuts pointing at a
+    # script we own is the only reliable path.
+    cat <<'EOF'
+KDE detected — manual step required to bind the DND shortcut:
+
+  System Settings → Shortcuts → Custom Shortcuts → Edit → New → Global Shortcut → Command/URL
+  Trigger:  Meta+Shift+D
+  Action:   $HOME/bin/toggle-dnd.sh
+EOF
+
+else
+    echo "Unsupported DE (${XDG_CURRENT_DESKTOP:-unknown}), skipping DND shortcut"
+fi
 {{- end -}}

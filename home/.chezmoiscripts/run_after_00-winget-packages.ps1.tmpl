@@ -35,6 +35,11 @@ $pdfTools = @(
     'tesseract-ocr.tesseract'           # tesseract — OCR engine (ocrmypdf runs via uvx)
 )
 
+# Dev tools — cross-platform equivalents of Linux-side installs
+$devTools = @(
+    'CoreyButler.NVMforWindows'         # nvm-windows — mirrors nvm on Linux
+)
+
 # Map winget IDs to process names for apps that block installs while running
 $processNames = @{
     'Spotify.Spotify'         = @('Spotify', 'SpotifyLauncher')
@@ -66,7 +71,7 @@ function Close-AppIfRunning($pkg) {
     return $false
 }
 
-$packages = $bootstrap + $cloudCLIs + $desktopApps + $pdfTools
+$packages = $bootstrap + $cloudCLIs + $desktopApps + $pdfTools + $devTools
 
 foreach ($pkg in $packages) {
     $installed = winget list --id $pkg --exact 2>$null | Select-String $pkg
