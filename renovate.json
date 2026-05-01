@@ -12,8 +12,18 @@
         "/home/dot_config/mise/config\\.toml$/"
       ],
       "matchStrings": [
-        "# renovate: packageName=(?<packageName>[^\\s]+) datasource=(?<datasource>[^\\s]+)\\n[\\w-]+ = \"(?<currentValue>[^\"]+)\"",
-        "# renovate: packageName=(?<packageName>[^\\s]+) datasource=(?<datasource>[^\\s]+)\\n[\\w-]+ = \\{\\s*version\\s*=\\s*\"(?<currentValue>[^\"]+)\""
+        "# renovate: packageName=(?<packageName>[^\\s]+) datasource=(?<datasource>[^\\s]+)\\n(?:[\\w-]+|\"[^\"]+\") = \"(?<currentValue>[^\"]+)\"",
+        "# renovate: packageName=(?<packageName>[^\\s]+) datasource=(?<datasource>[^\\s]+)\\n(?:[\\w-]+|\"[^\"]+\") = \\{\\s*version\\s*=\\s*\"(?<currentValue>[^\"]+)\""
+      ]
+    },
+    {
+      "description": "Kitty terminal — version is in a comment line because the official installer script takes it as an argument, not a variable assignment.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/home/\\.chezmoiscripts/run_onchange_after_01-kitty-install\\.sh\\.tmpl$/"
+      ],
+      "matchStrings": [
+        "# renovate: packageName=(?<packageName>[^\\s]+) datasource=(?<datasource>[^\\s]+)\\n# kitty-version: (?<currentValue>[^\\n]+)"
       ]
     },
     {
