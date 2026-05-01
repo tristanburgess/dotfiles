@@ -25,6 +25,10 @@ loop.run()
         disown
         STATE="ON"
     fi
+    # KDE native OSD (bypasses notification suppression)
+    qdbus6 org.kde.plasmashell /org/kde/osdService \
+        org.kde.osdService.showText "notifications" "Do Not Disturb: ${STATE}" 2>/dev/null || true
+
 elif [[ "${XDG_CURRENT_DESKTOP:-}" == *"Cinnamon"* ]]; then
     current=$(gsettings get org.cinnamon.desktop.notifications display-notifications)
     if [ "$current" = "true" ]; then
@@ -34,16 +38,10 @@ elif [[ "${XDG_CURRENT_DESKTOP:-}" == *"Cinnamon"* ]]; then
         gsettings set org.cinnamon.desktop.notifications display-notifications true
         STATE="OFF"
     fi
-else
-    echo "Unsupported DE: ${XDG_CURRENT_DESKTOP:-unknown}" >&2
-    exit 1
-fi
 
-# Kill any existing DND popup
-pkill -f "dnd-popup-proc" 2>/dev/null || true
-
-# Show a themed popup with fade animation using GTK
-python3 - "$STATE" "dnd-popup-proc" <<'PYEOF' &
+    # Cinnamon themed GTK popup
+    pkill -f "dnd-popup-proc" 2>/dev/null || true
+    python3 - "$STATE" "dnd-popup-proc" <<'PYEOF' &
 import gi, sys
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib
@@ -117,4 +115,9 @@ win.move(geom.x, geom.y)
 GLib.timeout_add(FADE_INTERVAL, tick)
 Gtk.main()
 PYEOF
-disown
+    disown
+
+else
+    echo "Unsupported DE: ${XDG_CURRENT_DESKTOP:-unknown}" >&2
+    exit 1
+fi
