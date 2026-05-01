@@ -18,6 +18,7 @@ add_line 'starship init bash'   'eval "$(starship init bash)"'
 add_line 'zoxide init bash'     'eval "$(zoxide init bash)"'
 add_line 'GOPATH.*bin'          'export PATH="$(go env GOPATH)/bin:$PATH"'
 add_line 'jj util completion'   'source <(jj util completion bash)'
+add_line 'NVM_DIR'              'export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"'
 
 # SSH agent - persist across terminal windows within same login session.
 # First terminal starts the agent; subsequent terminals reuse it.

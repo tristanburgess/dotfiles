@@ -20,8 +20,11 @@ if [[ -n "${LOCALAPPDATA:-}" ]] && command -v cygpath >/dev/null 2>&1; then
   _mise_shims="$(cygpath "$LOCALAPPDATA")/mise/shims"
   [[ -d "$_mise_shims" ]] && export PATH="$_mise_shims:$PATH"
 fi
+NPX_CMD="npx"
 {{- else }}
 CONFIG_DIR="{{ $home }}/.config/Claude"
+# Claude Desktop launches without mise on PATH; use the absolute shim path.
+NPX_CMD="{{ $home }}/.local/share/mise/shims/npx"
 {{- end }}
 
 CONFIG_FILE="${CONFIG_DIR}/claude_desktop_config.json"
@@ -36,11 +39,11 @@ fi
 mkdir -p "$CONFIG_DIR"
 [ -f "$CONFIG_FILE" ] || echo '{}' > "$CONFIG_FILE"
 
-MANAGED=$(jq -n --arg books "$BOOKS_PATH" '
+MANAGED=$(jq -n --arg books "$BOOKS_PATH" --arg npx "$NPX_CMD" '
 {
   mcpServers: {
     filesystem: {
-      command: "npx",
+      command: $npx,
       args: ["-y", "@modelcontextprotocol/server-filesystem", $books]
     }
   }

@@ -1,0 +1,11 @@
+{{- if eq .chezmoi.os "linux" -}}
+#!/bin/bash
+set -euo pipefail
+
+if [[ -s "$HOME/.nvm/nvm.sh" ]]; then
+    printf "nvm already installed, skipping\n"
+    exit 0
+fi
+
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+{{- end -}}
