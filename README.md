@@ -121,6 +121,14 @@ gh auth login
 claude  # authenticate Claude Code
 ```
 
+If you have a local dev clone at `~/dev/code/dotfiles`, switch chezmoi to use it as the source so you don't have to maintain two clones in sync:
+
+```bash
+chezmoi init --source ~/dev/code/dotfiles/home
+```
+
+After that, `jj git fetch && jj new main && chezmoi apply` is the full update cycle.
+
 For [signed commits](https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification#ssh-commit-signature-verification):
 
 ```bash

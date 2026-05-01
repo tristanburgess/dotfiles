@@ -42,7 +42,8 @@ function detectPlanType() {
         if (!creds?.claudeAiOauth) return "api"
         return "rate"
     } catch {
-        return null
+        // No credentials file — API key auth via env var
+        return process.env.ANTHROPIC_API_KEY ? "api" : null
     }
 }
 
@@ -404,7 +405,9 @@ const currentSessionCost = buildSessionCost(sessionCost)
 
 const hasLiveRateData = fivePct !== null || sevenPct !== null
 const isRatePlan = hasLiveRateData || credentialsPlanType === "rate"
-const isApiPlan = !hasLiveRateData && credentialsPlanType === "api"
+// API plan: no rate-limit data from Claude Code AND either creds say "api" or
+// Claude Code is providing cost data (API key stored internally, not as env var)
+const isApiPlan = !hasLiveRateData && (credentialsPlanType === "api" || sessionCost !== null)
 
 const rateIcons = isRatePlan ? buildRateIcons(fivePct, sevenPct) : null
 const budgetIndicator = isApiPlan
