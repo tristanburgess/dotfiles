@@ -37,6 +37,19 @@ zoxide = "0.9.9"
 # Chezmoi: bootstrapped by winget on Windows before mise exists
 # renovate: packageName=twpayne/chezmoi datasource=github-releases
 chezmoi = { version = "2.70.2", os = ["linux"] }
+# Kubernetes / local dev
+# renovate: packageName=kubernetes/kubernetes datasource=github-releases
+kubectl = { version = "1.36.0", os = ["linux"] }
+# renovate: packageName=helm/helm datasource=github-releases
+helm = { version = "4.1.4", os = ["linux"] }
+# renovate: packageName=k3d-io/k3d datasource=github-releases
+k3d = { version = "5.8.3", os = ["linux"] }
+# renovate: packageName=grafana/tanka datasource=github-releases
+tanka = { version = "0.37.0", os = ["linux"] }
+# renovate: packageName=jsonnet-bundler/jsonnet-bundler datasource=github-releases
+jb = { version = "0.6.0", os = ["linux"] }
+# renovate: packageName=google/go-jsonnet datasource=github-releases
+go-jsonnet = { version = "0.22.0", os = ["linux"] }
 # Cloud CLIs: installed via winget on Windows
 # renovate: packageName=aws/aws-cli datasource=github-releases
 awscli = { version = "2.34.40", os = ["linux"] }
