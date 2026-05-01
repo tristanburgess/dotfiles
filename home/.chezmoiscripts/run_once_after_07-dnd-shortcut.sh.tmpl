@@ -2,24 +2,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# Do Not Disturb keyboard-shortcut setup. Bare-metal Linux only —
-# gsettings/kglobalaccel keys don't exist in WSLg.
+# Register a global shortcut for toggling Do Not Disturb. Bare-metal Linux
+# only — gsettings keys don't exist in WSLg.
 
-if [[ "${XDG_CURRENT_DESKTOP:-}" == *"KDE"* ]]; then
-    # KDE Plasma 6 has a built-in DND toggle shortcut managed by Plasma itself
-    # (System Settings → Notifications → "Configure Do Not Disturb"). Setting
-    # it from a script via kglobalaccel/kwriteconfig is unreliable on Plasma 6
-    # because plasmashell rewrites the binding back to "none" when it
-    # registers the action. Configure the shortcut once via the GUI.
-    #
-    # We do start the kde-dnd-watcher.py daemon for visual OSD feedback when
-    # the DND inhibit state changes, since Plasma's native action does not
-    # always surface user feedback.
-    pkill -f "kde-dnd-watcher.py" 2>/dev/null || true
-    nohup python3 "$HOME/bin/kde-dnd-watcher.py" >/dev/null 2>&1 &
-    disown
-
-elif [[ "${XDG_CURRENT_DESKTOP:-}" == *"Cinnamon"* ]]; then
+if [[ "${XDG_CURRENT_DESKTOP:-}" == *"Cinnamon"* ]]; then
     # Cinnamon custom-list expects short names (e.g. "dnd-toggle"), NOT full dconf paths.
     # The keybinding data lives at the full dconf path but the list references just the name.
     SHORTCUT_NAME="dnd-toggle"
@@ -39,6 +25,26 @@ elif [[ "${XDG_CURRENT_DESKTOP:-}" == *"Cinnamon"* ]]; then
     gsettings set "$SCHEMA:$SHORTCUT_PATH" name "Toggle Do Not Disturb"
     gsettings set "$SCHEMA:$SHORTCUT_PATH" command "$HOME/bin/toggle-dnd.sh"
     gsettings set "$SCHEMA:$SHORTCUT_PATH" binding "['<Super><Shift>d']"
+
+elif [[ "${XDG_CURRENT_DESKTOP:-}" == *"KDE"* ]]; then
+    # KDE Plasma 6: configure the shortcut manually.
+    # System Settings → Custom Shortcuts → Add Command → bind Meta+Shift+D
+    # to "$HOME/bin/toggle-dnd.sh"
+    #
+    # Plasma's native "toggle do not disturb" action has KDE bug 436415:
+    # the shortcut stops working after closing the System Settings window.
+    # Programmatic kglobalaccel/kwriteconfig configuration of plasmashell
+    # actions is also unreliable: plasmashell rewrites our binding back to
+    # "none" when it registers the action. Custom Shortcuts pointing at a
+    # script we own is the only reliable path.
+    cat <<'EOF'
+KDE detected — manual step required to bind the DND shortcut:
+
+  System Settings → Shortcuts → Custom Shortcuts → Edit → New → Global Shortcut → Command/URL
+  Trigger:  Meta+Shift+D
+  Action:   $HOME/bin/toggle-dnd.sh
+EOF
+
 else
     echo "Unsupported DE (${XDG_CURRENT_DESKTOP:-unknown}), skipping DND shortcut"
 fi
