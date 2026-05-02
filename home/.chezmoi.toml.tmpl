@@ -7,10 +7,34 @@
          - dot_claude-code-router/config.json.tmpl (provider model list, Router map)
          - dot_claude-code-router/router.js.tmpl (LOCAL_* / CLOUD_* constants)
        Exposed in .chezmoi data as .ollama.{code,prose,think} and
-       .cloud.{sonnet,opus,haiku}. */ -}}
-{{- $ollamaCode := "qwen3-coder:30b" -}}
-{{- $ollamaProse := "gemma3:27b" -}}
-{{- $ollamaThink := "qwen3:30b-thinking" -}}
+       .cloud.{sonnet,opus,haiku}.
+
+       Local lanes are picked by the localProfile flag below:
+         fast     — gemma4:26b-a4b code + gemma4:e4b prose + qwen3.6:35b-a3b
+                    think. Fastest swap/load, weaker on agentic loops.
+         balanced — qwen3.6:35b-a3b code+think (collapsed via /think) +
+                    gemma4:26b-a4b prose. 2026-vintage frontier-class at
+                    MoE-3B/4B-active decode speed.
+         smart    — qwen3.6:27b dense code+think + gemma4:31b dense prose.
+                    Highest single-shot quality, ~5× slower decode. Use
+                    for one-shot architecture/debug, not tool loops. */ -}}
+{{- $localProfile := promptStringOnce . "localProfile" "Local model profile (fast | balanced | smart)" "balanced" -}}
+{{- $ollamaCode := "" -}}
+{{- $ollamaProse := "" -}}
+{{- $ollamaThink := "" -}}
+{{- if eq $localProfile "fast" -}}
+{{-   $ollamaCode  = "gemma4:26b-a4b-it-q4_K_M" -}}
+{{-   $ollamaProse = "gemma4:e4b-it-q4_K_M" -}}
+{{-   $ollamaThink = "qwen3.6:35b-a3b-q4_K_M" -}}
+{{- else if eq $localProfile "smart" -}}
+{{-   $ollamaCode  = "qwen3.6:27b-q4_K_M" -}}
+{{-   $ollamaProse = "gemma4:31b-it-q4_K_M" -}}
+{{-   $ollamaThink = "qwen3.6:27b-q4_K_M" -}}
+{{- else -}}
+{{-   $ollamaCode  = "qwen3.6:35b-a3b-q4_K_M" -}}
+{{-   $ollamaProse = "gemma4:26b-a4b-it-q4_K_M" -}}
+{{-   $ollamaThink = "qwen3.6:35b-a3b-q4_K_M" -}}
+{{- end -}}
 {{- $cloudSonnet := "claude-sonnet-4-6" -}}
 {{- $cloudOpus := "claude-opus-4-7" -}}
 {{- $cloudHaiku := "claude-haiku-4-5-20251001" -}}
@@ -25,9 +49,9 @@
        thinking + small ctx → local think lane, thinking + long ctx → Opus). */ -}}
 {{- $defaultLocal := promptBoolOnce . "defaultLocal" "Local-first bias for borderline sonnet/opus routing (true = lower spend, false = cloud bias)" true -}}
 {{- /* Where small/medium-context thinking-field requests go:
-       true  (default): all thinking → cloud Opus (quality bias; local 30B
+       true  (default): all thinking → cloud Opus (quality bias; local 30B-class
                         thinking models underperform on real planning tasks)
-       false:           thinking + ctx ≤ 60K → local qwen3:30b-thinking,
+       false:           thinking + ctx ≤ 60K → active profile's think lane,
                         thinking + ctx > 60K → cloud Opus
        Long-context thinking always escapes to cloud Opus regardless. */ -}}
 {{- $cloudThinking := promptBoolOnce . "cloudThinking" "Route all thinking-field requests to cloud Opus (true = quality bias, false = use local think lane for small ctx)" true -}}
@@ -58,7 +82,7 @@
        localPerfCtx below trivialCtx forces trivial requests cloud (most
        aggressive cloud bias); setting it above complexCtx is a no-op. */ -}}
 {{- $trivialCtx := 12000 -}}
-{{- $localPerfCtx := promptIntOnce . "localPerfCtx" "Soft ctx ceiling above which local is too slow — push to cloud (-1 to disable)" 20000 -}}
+{{- $localPerfCtx := promptIntOnce (get . "routing" | default dict) "localPerfCtx" "Soft ctx ceiling above which local is too slow — push to cloud (-1 to disable)" 20000 -}}
 {{- $complexCtx := 60000 -}}
 {{- /* Subagent names sniffed from request system prompts purely for audit
        logging (subagent=<name> field on log lines). Does not affect
@@ -93,6 +117,7 @@ sourceDir = {{ .chezmoi.sourceDir | quote }}
     defaultLocal = {{ $defaultLocal }}
     cloudThinking = {{ $cloudThinking }}
     logPrompt = {{ $logPrompt }}
+    localProfile = {{ $localProfile | quote }}
 
 [data.routing]
     trivialCtx     = {{ $trivialCtx }}

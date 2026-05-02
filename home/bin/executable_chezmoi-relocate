@@ -1,0 +1,109 @@
+#!/bin/bash
+set -euo pipefail
+
+# chezmoi-relocate — move chezmoi's source clone to a user-chosen path
+# and leave a symlink at the default location so chezmoi keeps working.
+#
+# chezmoi's default bootstrap (`chezmoi init --apply <repo>`) clones into
+# ~/.local/share/chezmoi (or $XDG_DATA_HOME/chezmoi). That path is fine
+# for chezmoi internals but unfriendly for routine editing. This script
+# moves that clone to a path of your choice and replaces the original
+# location with a symlink. All chezmoi commands keep working unchanged.
+#
+# Idempotent: re-running with the same target is a no-op. Refuses to
+# clobber a non-empty target. Rolls back the move if the symlink step
+# fails so chezmoi is never left without a source dir.
+
+usage() {
+    cat <<'EOF' >&2
+Usage: chezmoi-relocate <target-dir>
+
+Move ~/.local/share/chezmoi to <target-dir> and symlink the default
+location back to it. Re-run with the same target is a no-op.
+
+Examples:
+  chezmoi-relocate ~/dev/code/dotfiles
+  chezmoi-relocate ~/code/dotfiles
+EOF
+    exit 1
+}
+
+case "${1:-}" in
+    "" | "-h" | "--help") usage ;;
+esac
+[[ $# -eq 1 ]] || usage
+
+# Expand leading `~`, strip trailing slash, require absolute.
+TARGET="${1/#\~/$HOME}"
+TARGET="${TARGET%/}"
+if [[ "$TARGET" != /* ]]; then
+    printf 'chezmoi-relocate: target must be an absolute path: %s\n' "$TARGET" >&2
+    exit 1
+fi
+
+DEFAULT_SRC="${XDG_DATA_HOME:-$HOME/.local/share}/chezmoi"
+
+if [[ "$TARGET" == "$DEFAULT_SRC" ]]; then
+    printf 'Target equals default source dir (%s) — nothing to do.\n' "$DEFAULT_SRC"
+    exit 0
+fi
+
+# Already-relocated check. Plain `readlink` (no -f) is portable across
+# Linux and macOS BSD; we wrote the symlink ourselves with an absolute
+# target, so a textual compare against $TARGET is sufficient.
+if [[ -L "$DEFAULT_SRC" ]]; then
+    current="$(readlink "$DEFAULT_SRC")"
+    if [[ "$current" == "$TARGET" ]]; then
+        printf 'Already relocated: %s -> %s\n' "$DEFAULT_SRC" "$TARGET"
+        exit 0
+    fi
+    printf 'chezmoi-relocate: %s is a symlink pointing elsewhere (%s).\n' "$DEFAULT_SRC" "$current" >&2
+    printf '  Remove or repoint manually before re-running.\n' >&2
+    exit 1
+fi
+
+if [[ ! -d "$DEFAULT_SRC" ]]; then
+    printf 'chezmoi-relocate: %s does not exist. Run `chezmoi init --apply <repo>` first.\n' "$DEFAULT_SRC" >&2
+    exit 1
+fi
+
+# Allow an empty target dir (common when the user pre-created the path);
+# refuse anything non-empty so we never destroy existing work.
+if [[ -e "$TARGET" ]]; then
+    if [[ -d "$TARGET" && -z "$(ls -A "$TARGET" 2>/dev/null)" ]]; then
+        rmdir "$TARGET"
+    else
+        printf 'chezmoi-relocate: target %s already exists and is non-empty. Aborting.\n' "$TARGET" >&2
+        exit 1
+    fi
+fi
+
+mkdir -p "$(dirname "$TARGET")"
+
+printf 'Moving %s -> %s\n' "$DEFAULT_SRC" "$TARGET"
+mv "$DEFAULT_SRC" "$TARGET"
+
+printf 'Symlinking %s -> %s\n' "$DEFAULT_SRC" "$TARGET"
+if ! ln -s "$TARGET" "$DEFAULT_SRC"; then
+    printf 'chezmoi-relocate: symlink creation failed; rolling back move.\n' >&2
+    mv "$TARGET" "$DEFAULT_SRC"
+    exit 1
+fi
+
+# Smoke test — non-fatal. If chezmoi isn't on PATH yet (fresh bootstrap
+# before shell rehash) skip; otherwise warn but don't roll back, since
+# the filesystem move is correct and any chezmoi error is independent.
+if command -v chezmoi >/dev/null 2>&1; then
+    if ! chezmoi data >/dev/null 2>&1; then
+        printf 'Note: `chezmoi data` failed after relocation. Inspect manually.\n' >&2
+    fi
+fi
+
+cat <<EOF
+
+Relocation complete.
+  Source dir:      $TARGET
+  Default symlink: $DEFAULT_SRC -> $TARGET
+
+Edit dotfiles at $TARGET. \`chezmoi diff\` / \`chezmoi apply\` work from anywhere.
+EOF
