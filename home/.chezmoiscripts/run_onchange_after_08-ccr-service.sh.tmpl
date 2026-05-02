@@ -26,4 +26,24 @@ else
 fi
 
 printf "claude-code-router service active.\n"
+{{- else if and .isLinuxBaremetal .installClaude -}}
+#!/bin/bash
+set -euo pipefail
+
+# useCcr=false teardown for the ccr user service. Re-runs when the
+# rendered script content changes (i.e., when the flag flips from true
+# → false). The unit file itself is removed by .chezmoiignore.
+
+UNIT_NAME=claude-code-router.service
+
+if systemctl --user is-active --quiet "$UNIT_NAME" 2>/dev/null; then
+    systemctl --user stop "$UNIT_NAME" || true
+fi
+if systemctl --user is-enabled --quiet "$UNIT_NAME" 2>/dev/null; then
+    systemctl --user disable "$UNIT_NAME" || true
+fi
+
+systemctl --user daemon-reload || true
+
+printf "claude-code-router service stopped and disabled.\n"
 {{- end -}}

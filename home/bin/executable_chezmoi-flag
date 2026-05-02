@@ -1,0 +1,182 @@
+#!/bin/bash
+set -euo pipefail
+
+# chezmoi-flag — get / set / toggle chezmoi [data*] flags without hand-editing.
+#
+# Reads the canonical value via `chezmoi execute-template`. Writes via awk
+# (atomic temp + mv) scoped to the resolved [data] or [data.subsection]
+# block. Unknown keys are rejected so you can't accidentally create a
+# flag no template consumes.
+#
+# Keys may be passed as:
+#   - bare          (e.g. localPerfCtx)  — searched across all [data*] sections
+#                                          and bailed if ambiguous.
+#   - dotted        (e.g. routing.localPerfCtx) — explicit subsection.
+#
+# Usage:
+#   chezmoi-flag list
+#   chezmoi-flag get <key>
+#   chezmoi-flag set <key> <true|false|"string"|number>
+#   chezmoi-flag toggle <key>          # bool only
+
+CONFIG="${HOME}/.config/chezmoi/chezmoi.toml"
+
+usage() {
+    sed -n '/^# /,/^$/p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+valid_name() {
+    [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_.]*$ ]]
+}
+
+valid_value() {
+    case "$1" in
+        true|false)   return 0 ;;
+        \"*\")        return 0 ;;
+        -[0-9]*)      return 0 ;;
+        [0-9]*)       return 0 ;;
+        *)            return 1 ;;
+    esac
+}
+
+# Resolve a key ref to (section, leaf). For "routing.localPerfCtx" returns
+# section="data.routing" leaf="localPerfCtx". For bare "localPerfCtx",
+# searches every [data*] section for a unique hit. Prints "section\tleaf"
+# on stdout, exits 1 on miss/ambiguity (with explanation on stderr).
+resolve_key() {
+    local key="$1"
+
+    if [[ "$key" == *.* ]]; then
+        local sub="${key%.*}" leaf="${key##*.}"
+        local section="data.${sub}"
+        if ! awk -v s="[$section]" -v k="$leaf" '
+            $0 == s        { in_s=1; next }
+            /^\[/          { in_s=0 }
+            in_s && $1==k  { found=1; exit }
+            END            { exit !found }
+        ' "$CONFIG"; then
+            printf "Key '%s.%s' not found in [%s] of %s\n" \
+                "$sub" "$leaf" "$section" "$CONFIG" >&2
+            return 1
+        fi
+        printf "%s\t%s\n" "$section" "$leaf"
+        return 0
+    fi
+
+    # Bare key: scan all [data*] sections.
+    local hits
+    hits=$(awk -v k="$key" '
+        /^\[data(\.[A-Za-z0-9_]+)?\]$/ {
+            sec = $0; gsub(/^\[|\]$/, "", sec); next
+        }
+        /^\[/ { sec = "" }
+        sec && $1 == k { print sec }
+    ' "$CONFIG")
+
+    case $(printf "%s\n" "$hits" | grep -c .) in
+        0) printf "Key '%s' not found in any [data*] section.\n" "$key" >&2; return 1 ;;
+        1) printf "%s\t%s\n" "$hits" "$key"; return 0 ;;
+        *) printf "Key '%s' is ambiguous — present in multiple sections:\n%s\nUse a dotted form (e.g. routing.%s).\n" \
+                "$key" "$hits" "$key" >&2; return 1 ;;
+    esac
+}
+
+# Expand a key ref to a chezmoi template path. "routing.localPerfCtx"
+# becomes ".routing.localPerfCtx"; "localPerfCtx" resolves to its section
+# first ("routing.localPerfCtx") then prepends ".".
+template_path_for() {
+    local key="$1"
+    if [[ "$key" == *.* ]]; then
+        printf ".%s" "$key"
+        return
+    fi
+    local res sec
+    res=$(resolve_key "$key") || return 1
+    sec="${res%%$'\t'*}"
+    if [ "$sec" = "data" ]; then
+        printf ".%s" "$key"
+    else
+        printf ".%s.%s" "${sec#data.}" "$key"
+    fi
+}
+
+get_flag() {
+    local path
+    path=$(template_path_for "$1") || return 1
+    chezmoi execute-template "{{ $path }}" 2>/dev/null
+}
+
+set_flag() {
+    local key="$1" value="$2"
+    local res section leaf
+    res=$(resolve_key "$key") || exit 1
+    section="${res%%$'\t'*}"
+    leaf="${res##*$'\t'}"
+
+    local tmp
+    tmp=$(mktemp "${CONFIG}.XXXXXX")
+    trap 'rm -f "$tmp"' EXIT
+
+    awk -v s="[$section]" -v k="$leaf" -v val="$value" '
+        $0 == s         { in_s=1; print; next }
+        /^\[/           { in_s=0; print; next }
+        in_s && $1==k   {
+            match($0, /^[[:space:]]*/)
+            indent = substr($0, 1, RLENGTH)
+            # Preserve "key   = " spacing if present.
+            sub(/=.*$/, "= " val)
+            print
+            next
+        }
+                        { print }
+    ' "$CONFIG" > "$tmp"
+
+    mv "$tmp" "$CONFIG"
+    trap - EXIT
+
+    printf "%s.%s = %s\n" "${section#data}" "$leaf" "$value" | sed 's/^\.//'
+    chezmoi apply
+}
+
+toggle_flag() {
+    local key="$1" cur
+    cur=$(get_flag "$key")
+    case "$cur" in
+        true)  set_flag "$key" false ;;
+        false) set_flag "$key" true  ;;
+        *)     printf "Key '%s' is not a boolean (current: %s).\n" "$key" "$cur" >&2; exit 1 ;;
+    esac
+}
+
+# Flat dotted listing — each line is `<section.>key = value`, grep-friendly.
+list_flags() {
+    awk '
+        BEGIN { sec = "__off__" }
+        /^\[data(\.[A-Za-z0-9_]+)?\]$/ {
+            sec = $0; gsub(/^\[|\]$/, "", sec); sub(/^data\.?/, "", sec); next
+        }
+        /^\[/ { sec = "__off__"; next }
+        sec != "__off__" && /=/ {
+            line = $0
+            sub(/^[[:space:]]+/, "", line)
+            if (sec == "") print line
+            else { sub(/^[A-Za-z_][A-Za-z0-9_]*/, sec "." "&", line); print line }
+        }
+    ' "$CONFIG" | sort
+}
+
+case "${1:-}" in
+    list)         list_flags ;;
+    get)          valid_name "${2:-}" || { usage >&2; exit 1; }
+                  get_flag "$2" ;;
+    set)          valid_name "${2:-}" || { usage >&2; exit 1; }
+                  valid_value "${3:-}" || {
+                      printf "Invalid value: must be true|false|\"quoted\"|number\n" >&2
+                      exit 1
+                  }
+                  set_flag "$2" "$3" ;;
+    toggle)       valid_name "${2:-}" || { usage >&2; exit 1; }
+                  toggle_flag "$2" ;;
+    -h|--help|"") usage ;;
+    *)            usage >&2; exit 1 ;;
+esac

@@ -1,85 +1,73 @@
 // Custom router for claude-code-router.
+//
 // Returns "provider,model" string or null (fall back to static Router rules).
+// All knobs (model names, ctx thresholds, known subagents) are pulled from
+// chezmoi data — see home/.chezmoi.toml.tmpl for the source of truth and
+// tuning notes.
 //
-// Local model split (3 lanes):
-//   LOCAL_CODE  (qwen3-coder:30b)      — code files, tool-heavy agentic work,
-//                                        default for everything else
-//   LOCAL_PROSE (gemma3:27b)           — .md/.txt tasks, commit messages, Slack,
-//                                        design docs, SKILL files, general writing
-//   LOCAL_THINK (qwen3:30b-thinking)   — requests with `thinking` field set;
-//                                        MoE 30B/3B-active reasoning variant
-//
-// Tier policy:
-//   haiku  → LOCAL (model picked by think/prose/code heuristic) unless an
-//             Anthropic-only feature is requested (web_search, server-side
-//             tools) → cloud haiku
-//   sonnet/opus → classified per request:
-//     complex     → cloud (model tier preserved)
-//     thinking    → CLOUD_OPUS when CLOUD_THINKING flag set (default),
-//                   else LOCAL_THINK (small-ctx) or CLOUD_OPUS (long-ctx)
-//     trivial     → LOCAL (model picked by think/prose/code heuristic)
-//     borderline  → DEFAULT_LOCAL ? LOCAL : cloud
-//
-//   Thinking field: CLOUD_OPUS by default (CLOUD_THINKING=true) since local
-//   30B thinking models underperform on real planning tasks. With
-//   CLOUD_THINKING=false, small-ctx thinking goes to LOCAL_THINK and only
-//   long-ctx escapes to Opus.
-//
-// Tool-capability guard: gemma3:27b does not support the Anthropic `tools`
-// field. When a request has tools, the prose-lane resolution is replaced
-// with the code lane (qwen3-coder:30b supports tools).
-//
-// Manual override keywords (anywhere in the last user message):
-//   Local lanes:
-//     @code        → force LOCAL_CODE
-//     @prose       → force LOCAL_PROSE
-//     @think       → force LOCAL_THINK
-//   Cloud lanes:
-//     @cloudcode   → force CLOUD_SONNET (cloud code/general work)
-//     @cloudprose  → force CLOUD_SONNET (cloud prose work)
-//     @cloudthink  → force CLOUD_OPUS   (cloud reasoning / big plans)
-//
-// To switch all subsequent requests, use Claude Code's /model command:
-//   /model ollama,gemma3:27b           — prose lane
-//   /model ollama,qwen3-coder:30b      — code lane
-//   /model ollama,qwen3:30b-thinking   — thinking lane
-//   /model anthropic,claude-sonnet-4-6 — cloud Sonnet
-//   /model anthropic,claude-opus-4-7   — cloud Opus
+// Decision flow per request:
+//   1. @keyword override anywhere in last user message wins all
+//      (@code/@prose/@think/@cloudcode/@cloudprose/@cloudthink)
+//   2. requested model = haiku → local lane unless thinking, server-side
+//      tools, or ctx > localPerfCtx forces cloud
+//   3. requested model = sonnet/opus → classified into trivial / thinking /
+//      complex / borderline; localPerfCtx soft-escalates borderline to cloud
 //
 // Audit:
 //   journalctl --user -u claude-code-router -g '\[router\]' -n 50
+//   ~/bin/claude-code-router-audit 1h   # summary histograms
+//
+// Log line schema:
+//   class    requested tier: override | haiku | sonnet | opus
+//   reason   decision discriminator (server-side-tool, perf-ctx-ceiling,
+//            reasoning-verb, trivial-local, borderline-local, etc.)
+//   dest     "provider,model" the request was routed to
+//   extras   k=v pairs (ctx, verb, subagent, laneSignal, ...) — only
+//            present when meaningful (false bools omitted)
 
-const DEFAULT_LOCAL = {{ get . "defaultLocal" | default true }};
+const DEFAULT_LOCAL  = {{ get . "defaultLocal" | default true }};
 const CLOUD_THINKING = {{ get . "cloudThinking" | default true }};
 
-const LOCAL_CODE  = "ollama,qwen3-coder:30b";      // code, tool-heavy, default
-const LOCAL_PROSE = "ollama,gemma3:27b";           // markdown, writing, Notion
-const LOCAL_THINK = "ollama,qwen3:30b-thinking";   // reasoning / thinking field
-const CLOUD_SONNET = "anthropic,claude-sonnet-4-6";
-const CLOUD_OPUS   = "anthropic,claude-opus-4-7";
-const CLOUD_HAIKU  = "anthropic,claude-haiku-4-5-20251001";
+// Audit logging: off by default. Set CCR_LOG_PROMPT=1 in the systemd unit's
+// Environment (toggle via chezmoi flag logPrompt) to include a truncated
+// user-prompt snippet in each [router] log line.
+const LOG_PROMPT = process.env.CCR_LOG_PROMPT === "1" || process.env.CCR_LOG_PROMPT === "true";
+const PROMPT_SNIPPET_LEN = 120;
 
-// Reasoning verbs → cloud quality needed.
-const REASONING_KEYWORDS = /\b(explain|why|analyze|architect|design|review|compare|evaluate|investigate|debug|root\s*cause|plan)\b/i;
+// Audit-only subagent detection — substring match against body.system.
+const KNOWN_SUBAGENTS = {{ .routing.knownSubagents | toJson }};
 
-// Server-side tool type prefixes — Anthropic API only.
+const LOCAL_CODE   = "ollama,{{ .ollama.code }}";
+const LOCAL_PROSE  = "ollama,{{ .ollama.prose }}";
+const LOCAL_THINK  = "ollama,{{ .ollama.think }}";
+const CLOUD_SONNET = "anthropic,{{ .cloud.sonnet }}";
+const CLOUD_OPUS   = "anthropic,{{ .cloud.opus }}";
+const CLOUD_HAIKU  = "anthropic,{{ .cloud.haiku }}";
+
+const REASONING_KEYWORDS    = /\b(explain|why|analyze|architect|design|review|compare|evaluate|investigate|debug|root\s*cause|plan)\b/i;
 const SERVER_SIDE_TOOL_TYPES = /^(web_search|computer|code_execution|bash_|text_editor)/;
+const PROSE_FILE_EXT        = /\b\w+\.(md|txt|markdown|rst)\b/i;
+const PROSE_TASK_KEYWORDS   = /\b(commit\s+message|changelog|slack\s+message|design\s+doc|SKILL\.md|skill\s+file|prose|readme|announcement|blog\s+post|email|write\s+(a|the|up|this|an))\b/i;
+const CODE_FILE_EXT         = /\b\w+\.(go|py|ts|tsx|js|jsx|rs|sh|bash|zsh|c|cpp|java|rb|swift|kt|cs|tf|jsonnet|yaml|json|toml)\b/i;
 
-// Prose-lane signals in user message or file paths.
-// Matches explicit .md/.txt references, common writing tasks, Notion/Slack/docs.
-const PROSE_FILE_EXT = /\b\w+\.(md|txt|markdown|rst)\b/i;
-const PROSE_TASK_KEYWORDS = /\b(commit\s+message|changelog|slack\s+message|design\s+doc|SKILL\.md|skill\s+file|prose|readme|announcement|blog\s+post|email|write\s+(a|the|up|this|an))\b/i;
+// Ctx thresholds — see home/.chezmoi.toml.tmpl [data.routing] for tuning.
+const TRIVIAL_CTX    = {{ .routing.trivialCtx }};
+const LOCAL_PERF_CTX = {{ .routing.localPerfCtx }};
+const COMPLEX_CTX    = {{ .routing.complexCtx }};
 
-// Code file extensions — strong signal to stay on code model.
-const CODE_FILE_EXT = /\b\w+\.(go|py|ts|tsx|js|jsx|rs|sh|bash|zsh|c|cpp|java|rb|swift|kt|cs|tf|jsonnet|yaml|json|toml)\b/i;
-
-// Classification thresholds.
-const TRIVIAL_CTX = 12000;  // Claude Code baseline overhead ~10K; 12K catches small asks
-const COMPLEX_CTX = 60000;  // beyond this, route cloud (matches CCR longContextThreshold)
+function localPerfExceeded(ctx) {
+  return LOCAL_PERF_CTX >= 0 && ctx > LOCAL_PERF_CTX;
+}
 
 function cloudFor(model) {
-  if (/opus/i.test(model)) return CLOUD_OPUS;
-  return CLOUD_SONNET;
+  return /opus/i.test(model) ? CLOUD_OPUS : CLOUD_SONNET;
+}
+
+function tierOf(model) {
+  if (/haiku/i.test(model))         return "haiku";
+  if (/opus/i.test(model))          return "opus";
+  if (/sonnet/i.test(model))        return "sonnet";
+  return model || "?";
 }
 
 function estimateTokens(body) {
@@ -141,9 +129,8 @@ function needsServerSideTools(body) {
   return false;
 }
 
-// Any tool definitions in body (client-side or server-side). gemma3:27b
-// rejects the request entirely with "does not support tools" when this is
-// non-empty, so the prose lane must be skipped.
+// gemma3:27b rejects requests that carry a `tools` field. Used by
+// localLaneFor to skip the prose lane when tools are present.
 function hasTools(body) {
   return Array.isArray(body && body.tools) && body.tools.length > 0;
 }
@@ -154,144 +141,203 @@ function needsThinking(body) {
   return !!(t.type || t.budget_tokens);
 }
 
-// Manual override keywords. Cloud overrides win over local overrides
-// when both appear (cloud is the more explicit "send remote" signal).
-// Returns destination string or null.
+// Manual override keywords. Cloud overrides win over local when both present.
 function manualOverride(body) {
   const msg = lastUserMessage(body);
-  if (/@cloudthink\b/i.test(msg)) return CLOUD_OPUS;
-  if (/@cloudcode\b/i.test(msg))  return CLOUD_SONNET;
-  if (/@cloudprose\b/i.test(msg)) return CLOUD_SONNET;
-  if (/@think\b/i.test(msg)) return LOCAL_THINK;
-  if (/@prose\b/i.test(msg)) return LOCAL_PROSE;
-  if (/@code\b/i.test(msg))  return LOCAL_CODE;
+  if (/@cloudthink\b/i.test(msg)) return { dest: CLOUD_OPUS,   key: "@cloudthink" };
+  if (/@cloudcode\b/i.test(msg))  return { dest: CLOUD_SONNET, key: "@cloudcode"  };
+  if (/@cloudprose\b/i.test(msg)) return { dest: CLOUD_SONNET, key: "@cloudprose" };
+  if (/@think\b/i.test(msg))      return { dest: LOCAL_THINK,  key: "@think"      };
+  if (/@prose\b/i.test(msg))      return { dest: LOCAL_PROSE,  key: "@prose"      };
+  if (/@code\b/i.test(msg))       return { dest: LOCAL_CODE,   key: "@code"       };
   return null;
 }
 
-// Decide which local lane to use based on prose/code signals.
-// Thinking lane is selected by the caller (see router export) when a
-// `thinking` field is present and ctx is within local-friendly bounds.
-function localModelFor(body) {
+// Local lane selection (code / prose). Returns { dest, signal } where
+// signal explains the trigger for audit logging.
+function localLaneFor(body) {
   const msg = lastUserMessage(body);
-  // gemma3:27b rejects requests with tools. Force code lane in that case.
   const proseAllowed = !hasTools(body);
 
-  // Code file extension in message → code lane.
-  if (CODE_FILE_EXT.test(msg)) return LOCAL_CODE;
+  let m = CODE_FILE_EXT.exec(msg);
+  if (m) return { dest: LOCAL_CODE, signal: `code-ext:.${m[1]}` };
 
-  // Prose signals → prose lane (only if no tools in request).
-  if (proseAllowed && (PROSE_FILE_EXT.test(msg) || PROSE_TASK_KEYWORDS.test(msg))) {
-    return LOCAL_PROSE;
+  if (proseAllowed) {
+    m = PROSE_FILE_EXT.exec(msg);
+    if (m) return { dest: LOCAL_PROSE, signal: `prose-ext:.${m[1]}` };
+    m = PROSE_TASK_KEYWORDS.exec(msg);
+    if (m) {
+      const kw = m[0].toLowerCase().replace(/\s+/g, "-");
+      return { dest: LOCAL_PROSE, signal: `prose-keyword:${kw}` };
+    }
   }
 
-  // Scan recent tool_use names for file extensions as a tiebreaker.
+  // Tiebreaker: scan recent tool_use inputs for file extensions.
   if (Array.isArray(body && body.messages)) {
     for (let i = body.messages.length - 1; i >= 0; i--) {
-      const m = body.messages[i];
-      if (m.role !== "assistant") continue;
-      const content = Array.isArray(m.content) ? m.content : [];
+      const item = body.messages[i];
+      if (item.role !== "assistant") continue;
+      const content = Array.isArray(item.content) ? item.content : [];
       for (const c of content) {
         if (c && c.type === "tool_use" && c.input) {
           const path = JSON.stringify(c.input);
-          if (CODE_FILE_EXT.test(path)) return LOCAL_CODE;
-          if (proseAllowed && PROSE_FILE_EXT.test(path)) return LOCAL_PROSE;
+          let m2 = CODE_FILE_EXT.exec(path);
+          if (m2) return { dest: LOCAL_CODE, signal: `tool-tiebreaker-code:.${m2[1]}` };
+          if (proseAllowed) {
+            m2 = PROSE_FILE_EXT.exec(path);
+            if (m2) return { dest: LOCAL_PROSE, signal: `tool-tiebreaker-prose:.${m2[1]}` };
+          }
         }
       }
     }
   }
 
-  return LOCAL_CODE; // default: code lane
+  return { dest: LOCAL_CODE, signal: "default-code" };
 }
 
-function classify(body) {
-  const ctx = estimateTokens(body);
-  const hasReasoningVerb = REASONING_KEYWORDS.test(lastUserMessage(body));
-  const inToolLoop = hasPriorToolUse(body);
-  const needsServerTool = needsServerSideTools(body);
-  const wantsThinking = needsThinking(body);
-
-  const signals = { ctx, hasReasoningVerb, inToolLoop, needsServerTool, wantsThinking };
-
-  // Server-side tools are Anthropic-only — always cloud.
-  if (needsServerTool) return { class: "complex", reason: "server-side-tool", signals };
-  // Long-context wins over thinking — local thinking model can't handle huge ctx.
-  if (ctx > COMPLEX_CTX) return { class: "complex", reason: "long-context", signals };
-  // Thinking field present + manageable ctx → local thinking lane.
-  if (wantsThinking) return { class: "thinking", reason: "thinking-enabled", signals };
-  if (hasReasoningVerb) return { class: "complex", reason: "reasoning-verb", signals };
-  if (ctx <= TRIVIAL_CTX && !inToolLoop) return { class: "trivial", reason: "small-context", signals };
-  return { class: "borderline", reason: "mid-range", signals };
+function detectSubagent(body) {
+  let sys = "";
+  if (typeof body.system === "string") {
+    sys = body.system;
+  } else if (Array.isArray(body.system)) {
+    for (const s of body.system) {
+      if (s && typeof s.text === "string") sys += s.text + " ";
+    }
+  }
+  if (!sys) return null;
+  for (const name of KNOWN_SUBAGENTS) {
+    if (sys.includes(name)) return name;
+  }
+  return null;
 }
 
-function log(reqId, model, cls, reason, dest, extra) {
+function promptSnippet(body) {
+  if (!LOG_PROMPT) return null;
+  const msg = lastUserMessage(body);
+  if (!msg) return null;
+  const flat = msg.replace(/\s+/g, " ").trim();
+  const trunc = flat.length > PROMPT_SNIPPET_LEN
+    ? flat.slice(0, PROMPT_SNIPPET_LEN) + "…"
+    : flat;
+  return trunc.replace(/"/g, "'");
+}
+
+// Single object-arg log() — easier to extend than positional args.
+// `extras` is an object of k=v pairs; false / null / undefined / "" are
+// suppressed (absence implies false / not-applicable).
+function log({ reqId, model, cls, reason, dest, body, extras = {} }) {
+  const parts = [];
+  for (const [k, v] of Object.entries(extras)) {
+    if (v === undefined || v === null || v === "" || v === false) continue;
+    parts.push(`${k}=${v}`);
+  }
+  const sub = detectSubagent(body);
+  if (sub) parts.push(`subagent=${sub}`);
+  const tc = Array.isArray(body && body.tools) ? body.tools.length : 0;
+  if (tc) parts.push(`toolCount=${tc}`);
+  const snip = promptSnippet(body);
+  if (snip) parts.push(`prompt="${snip}"`);
+
   console.log(
     `[router] req=${reqId || "?"} model=${model} class=${cls}` +
     (reason ? ` reason=${reason}` : "") +
-    (extra  ? ` ${extra}`        : "") +
+    (parts.length ? ` ${parts.join(" ")}` : "") +
     ` → ${dest}`
   );
 }
 
 module.exports = async function router(req /*, config */) {
-  const body = req?.body || {};
+  const body  = req?.body || {};
   const model = body.model || "";
   const reqId = req?.id || req?.headers?.["x-request-id"];
+  const cls   = tierOf(model);
 
-  // Highest priority: explicit @keyword override anywhere in the last user msg.
+  // 1. Manual @keyword override.
   const override = manualOverride(body);
   if (override) {
-    log(reqId, model, "override", null, override);
-    return override;
+    log({ reqId, model, cls: "override", reason: override.key, dest: override.dest, body });
+    return override.dest;
   }
 
-  // Haiku (subagents): local unless Anthropic-only feature needed.
-  if (/haiku/i.test(model)) {
+  // 2. Haiku (subagents).
+  if (cls === "haiku") {
+    const ctx = estimateTokens(body);
+
     if (needsServerSideTools(body)) {
-      log(reqId, model, "haiku-cloud", "server-side-tool", CLOUD_HAIKU);
+      log({ reqId, model, cls, reason: "server-side-tool", dest: CLOUD_HAIKU, body, extras: { ctx } });
       return CLOUD_HAIKU;
     }
     if (needsThinking(body)) {
       if (CLOUD_THINKING) {
-        log(reqId, model, "haiku-cloud", "thinking-cloud-default", CLOUD_OPUS);
+        log({ reqId, model, cls, reason: "thinking-cloud-default", dest: CLOUD_OPUS, body, extras: { ctx } });
         return CLOUD_OPUS;
       }
-      const ctx = estimateTokens(body);
       if (ctx > COMPLEX_CTX) {
-        log(reqId, model, "haiku-cloud", "thinking-long-context", CLOUD_OPUS);
+        log({ reqId, model, cls, reason: "thinking-long-context", dest: CLOUD_OPUS, body, extras: { ctx } });
         return CLOUD_OPUS;
       }
-      log(reqId, model, "haiku-think", "thinking-enabled", LOCAL_THINK);
+      log({ reqId, model, cls, reason: "thinking-local", dest: LOCAL_THINK, body, extras: { ctx } });
       return LOCAL_THINK;
     }
-    const dest = localModelFor(body);
-    log(reqId, model, "haiku", null, dest);
-    return dest;
-  }
-
-  // Sonnet + Opus: classify → decide cloud vs local model.
-  if (/sonnet|opus/i.test(model)) {
-    const decision = classify(body);
-    const local = localModelFor(body);
-    const sig = decision.signals;
-    let dest;
-
-    if (decision.class === "trivial") {
-      dest = local;
-    } else if (decision.class === "thinking") {
-      dest = CLOUD_THINKING ? CLOUD_OPUS : LOCAL_THINK;
-    } else if (decision.class === "complex") {
-      // Long-ctx + thinking is a "big plan" — escape to Opus regardless of
-      // incoming tier. Other complex reasons preserve the requested tier.
-      dest = (sig.wantsThinking && sig.ctx > COMPLEX_CTX) ? CLOUD_OPUS : cloudFor(model);
-    } else {
-      dest = DEFAULT_LOCAL ? local : cloudFor(model);
+    if (localPerfExceeded(ctx)) {
+      log({ reqId, model, cls, reason: "perf-ctx-ceiling", dest: CLOUD_HAIKU, body,
+        extras: { ctx, localPerfCtx: LOCAL_PERF_CTX } });
+      return CLOUD_HAIKU;
     }
 
-    log(reqId, model, decision.class, decision.reason, dest,
-      `ctx=${sig.ctx} reasoning=${sig.hasReasoningVerb} toolLoop=${sig.inToolLoop}` +
-      ` serverTool=${sig.needsServerTool || false} thinking=${sig.wantsThinking || false}` +
-      ` tools=${hasTools(body)} cloudThinking=${CLOUD_THINKING}` +
-      ` localLane=${local.split(",")[1]}`);
+    const lane = localLaneFor(body);
+    log({ reqId, model, cls, reason: "local-default", dest: lane.dest, body,
+      extras: { ctx, laneSignal: lane.signal } });
+    return lane.dest;
+  }
+
+  // 3. Sonnet / Opus.
+  if (cls === "sonnet" || cls === "opus") {
+    const ctx              = estimateTokens(body);
+    const verbMatch        = REASONING_KEYWORDS.exec(lastUserMessage(body));
+    const reasoningVerb    = verbMatch ? verbMatch[0].toLowerCase().replace(/\s+/g, "-") : null;
+    const inToolLoop       = hasPriorToolUse(body);
+    const needsServerTool  = needsServerSideTools(body);
+    const wantsThinking    = needsThinking(body);
+    const lane             = localLaneFor(body);
+
+    let dest;
+    let reason;
+
+    if (needsServerTool) {
+      dest = cloudFor(model);
+      reason = "server-side-tool";
+    } else if (ctx > COMPLEX_CTX) {
+      dest = (wantsThinking) ? CLOUD_OPUS : cloudFor(model);
+      reason = "long-context";
+    } else if (wantsThinking) {
+      dest = CLOUD_THINKING ? CLOUD_OPUS : LOCAL_THINK;
+      reason = CLOUD_THINKING ? "thinking-cloud-default" : "thinking-local";
+    } else if (verbMatch) {
+      dest = cloudFor(model);
+      reason = "reasoning-verb";
+    } else if (ctx <= TRIVIAL_CTX && !inToolLoop) {
+      dest = lane.dest;
+      reason = "trivial-local";
+    } else if (localPerfExceeded(ctx)) {
+      dest = cloudFor(model);
+      reason = "perf-ctx-ceiling";
+    } else {
+      dest = DEFAULT_LOCAL ? lane.dest : cloudFor(model);
+      reason = DEFAULT_LOCAL ? "borderline-local" : "borderline-cloud";
+    }
+
+    log({ reqId, model, cls, reason, dest, body, extras: {
+      ctx,
+      verb: reasoningVerb,
+      toolLoop: inToolLoop,
+      serverTool: needsServerTool,
+      thinking: wantsThinking,
+      cloudThinking: wantsThinking ? CLOUD_THINKING : false,
+      defaultLocal: reason.startsWith("borderline") ? DEFAULT_LOCAL : false,
+      localPerfCtx: reason === "perf-ctx-ceiling" ? LOCAL_PERF_CTX : false,
+      laneSignal: dest === lane.dest ? lane.signal : false,
+    } });
     return dest;
   }
 

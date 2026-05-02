@@ -1,10 +1,23 @@
 {{- $name := promptStringOnce . "name" "Full name" -}}
 {{- $email := promptStringOnce . "email" "Email address" -}}
 {{- $aiTools := promptMultichoiceOnce . "aiTools" "AI tools to install" (list "claude" "codex") (list "claude") -}}
+{{- /* Single source of truth for model names referenced across the
+       routing stack. Bumping a model here propagates to:
+         - run_onchange_after_07-ollama-bootstrap.sh.tmpl (pull + teardown)
+         - dot_claude-code-router/config.json.tmpl (provider model list, Router map)
+         - dot_claude-code-router/router.js.tmpl (LOCAL_* / CLOUD_* constants)
+       Exposed in .chezmoi data as .ollama.{code,prose,think} and
+       .cloud.{sonnet,opus,haiku}. */ -}}
+{{- $ollamaCode := "qwen3-coder:30b" -}}
+{{- $ollamaProse := "gemma3:27b" -}}
+{{- $ollamaThink := "qwen3:30b-thinking" -}}
+{{- $cloudSonnet := "claude-sonnet-4-6" -}}
+{{- $cloudOpus := "claude-opus-4-7" -}}
+{{- $cloudHaiku := "claude-haiku-4-5-20251001" -}}
 {{- /* Tiered model routing via claude-code-router + Ollama (local) +
        Anthropic API (cloud). Set false to run Claude Code straight to
        Anthropic with no proxy. */ -}}
-{{- $useCcr := promptBoolOnce . "useCcr" "Enable tiered routing: local Ollama (qwen3-coder:30b code, gemma3:27b prose, qwen3:30b-thinking) + cloud Sonnet/Opus via CCR" true -}}
+{{- $useCcr := promptBoolOnce . "useCcr" (printf "Enable tiered routing: local Ollama (%s code, %s prose, %s) + cloud Sonnet/Opus via CCR" $ollamaCode $ollamaProse $ollamaThink) true -}}
 {{- /* Bias for sonnet/opus borderline-classified requests:
        true  (default): borderline → local lane (cost bias)
        false:           borderline → cloud (quality bias)
@@ -18,6 +31,43 @@
                         thinking + ctx > 60K → cloud Opus
        Long-context thinking always escapes to cloud Opus regardless. */ -}}
 {{- $cloudThinking := promptBoolOnce . "cloudThinking" "Route all thinking-field requests to cloud Opus (true = quality bias, false = use local think lane for small ctx)" true -}}
+{{- /* Audit logging: include a truncated user-prompt snippet in each
+       [router] log line. Off by default since journalctl is durable.
+       Toggle via chezmoi.toml then `chezmoi apply` (re-renders the
+       systemd unit + restarts the service via run_onchange). */ -}}
+{{- $logPrompt := promptBoolOnce . "logPrompt" "Include user-prompt snippets in ccr router audit logs (CCR_LOG_PROMPT)" false -}}
+{{- /* Routing ctx thresholds — three tiers, ordered:
+         trivialCtx  ≤  localPerfCtx  <  complexCtx
+
+       trivialCtx (12000): Claude Code baseline ctx overhead is ~10K; below
+         this a request is small enough that local handles it instantly.
+         Sonnet/opus → local trivial lane. Hardcoded — tied to Claude Code
+         protocol overhead, not user preference.
+
+       localPerfCtx (20000, prompted): Soft ceiling for local routing.
+         Above this, iGPU prefill bandwidth dominates (40-100s before
+         first token on AMD 890M with 30B-MoE). Push haiku and sonnet/opus
+         borderline to cloud regardless of defaultLocal. Tune to your
+         hardware. -1 disables (only complexCtx will force cloud).
+
+       complexCtx (60000): Hard capacity cap — qwen3 context windows top
+         out near here, beyond it local can't fit the request at all.
+         Always cloud. Hardcoded — tied to local model capability.
+
+       Invariants: trivialCtx ≤ localPerfCtx ≤ complexCtx. Setting
+       localPerfCtx below trivialCtx forces trivial requests cloud (most
+       aggressive cloud bias); setting it above complexCtx is a no-op. */ -}}
+{{- $trivialCtx := 12000 -}}
+{{- $localPerfCtx := promptIntOnce . "localPerfCtx" "Soft ctx ceiling above which local is too slow — push to cloud (-1 to disable)" 20000 -}}
+{{- $complexCtx := 60000 -}}
+{{- /* Subagent names sniffed from request system prompts purely for audit
+       logging (subagent=<name> field on log lines). Does not affect
+       routing decisions. Add new agents here as you adopt them. */ -}}
+{{- $knownSubagents := list
+    "cavecrew-investigator" "cavecrew-builder" "cavecrew-reviewer"
+    "prose-craft:prose-review" "prose-craft:craft-review" "prose-craft:learn-review"
+    "claude-code-guide" "statusline-setup"
+    "general-purpose" "Explore" "Plan" -}}
 
 {{- /* OS detection: derive isWSL from kernel.osrelease on Linux */ -}}
 {{- $isWSL := false -}}
@@ -42,6 +92,23 @@ sourceDir = {{ .chezmoi.sourceDir | quote }}
     useCcr = {{ $useCcr }}
     defaultLocal = {{ $defaultLocal }}
     cloudThinking = {{ $cloudThinking }}
+    logPrompt = {{ $logPrompt }}
+
+[data.routing]
+    trivialCtx     = {{ $trivialCtx }}
+    localPerfCtx   = {{ $localPerfCtx }}
+    complexCtx     = {{ $complexCtx }}
+    knownSubagents = {{ $knownSubagents | toJson }}
+
+[data.ollama]
+    code  = {{ $ollamaCode | quote }}
+    prose = {{ $ollamaProse | quote }}
+    think = {{ $ollamaThink | quote }}
+
+[data.cloud]
+    sonnet = {{ $cloudSonnet | quote }}
+    opus   = {{ $cloudOpus | quote }}
+    haiku  = {{ $cloudHaiku | quote }}
 
 [merge]
     command = "nvim"
