@@ -4,8 +4,8 @@ set -euo pipefail
 # ccr-audit — summarize claude-code-router routing decisions from journalctl.
 #
 # Reads [router] log lines from the claude-code-router user service and
-# prints histograms: destination breakdown, class/reason mix, reasoning
-# verbs, subagents, override usage, and ctx averages.
+# prints histograms designed for tuning chezmoi flags (localPerfCtx,
+# defaultLocal, cloudThinking).
 #
 # Usage:
 #   ccr-audit              # last 24h
@@ -15,30 +15,19 @@ set -euo pipefail
 
 since="24 hours ago"
 case "${1:-}" in
-    "")
-        ;;
-    --since)
-        shift
-        since="$1"
-        ;;
-    -h|--help)
-        sed -n '1,/^$/p' "$0" | sed 's/^# \{0,1\}//'
-        exit 0
-        ;;
+    "")           ;;
+    --since)      shift; since="$1" ;;
+    -h|--help)    sed -n '1,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)
-        # Bare arg like 1h, 7d, 30m — convert to journalctl --since string.
         n="${1%[smhdw]}"
         unit="${1#$n}"
         case "$unit" in
             s) since="$n seconds ago" ;;
             m) since="$n minutes ago" ;;
-            h) since="$n hours ago" ;;
-            d) since="$n days ago" ;;
-            w) since="$n weeks ago" ;;
-            *)
-                printf "Unrecognized window: %s\n" "$1" >&2
-                exit 1
-                ;;
+            h) since="$n hours ago"   ;;
+            d) since="$n days ago"    ;;
+            w) since="$n weeks ago"   ;;
+            *) printf "Unrecognized window: %s\n" "$1" >&2; exit 1 ;;
         esac
         ;;
 esac
@@ -55,107 +44,145 @@ total=$(printf '%s\n' "$raw" | wc -l)
 printf "ccr-audit — %d requests since %s\n" "$total" "$since"
 printf "%s\n" "════════════════════════════════════════════════════════════════"
 
-# Destinations.
-printf "\nDestinations\n"
-printf '%s\n' "$raw" | awk -F'→ ' 'NF>1 {gsub(/^ +| +$/,"",$2); print $2}' \
+# Generic histogram: extract `<field>=<value>` from each line, count and rank.
+# Usage: hist_field <field-name> [width]
+hist_field() {
+    local field="$1" w="${2:-22}"
+    printf '%s\n' "$raw" \
+        | grep -oE " $field=[^ ]+" \
+        | awk -F= '{print $2}' \
+        | sort | uniq -c | sort -rn \
+        | awk -v w="$w" '{ printf "  %5d  %-*s\n", $1, w, $2 }' \
+        || true
+}
+
+# Section helper. Prints heading + body or "(none)" fallback.
+section() {
+    local title="$1" body="$2" empty="${3:-(none)}"
+    printf "\n%s\n" "$title"
+    if [ -n "$body" ]; then printf "%s\n" "$body"
+    else printf "  %s\n" "$empty"; fi
+}
+
+# 1. Destinations.
+dests=$(printf '%s\n' "$raw" | awk -F'→ ' 'NF>1 {gsub(/^ +| +$/,"",$2); print $2}' \
     | sort | uniq -c | sort -rn \
-    | awk -v t="$total" '{
-        pct = 100 * $1 / t
-        printf "  %5d  %5.1f%%  %s\n", $1, pct, $2
-    }'
+    | awk -v t="$total" '{ printf "  %5d  %5.1f%%  %s\n", $1, 100*$1/t, $2 }')
+section "Destinations" "$dests"
 
-# Class × reason mix.
-printf "\nClass × reason\n"
-printf '%s\n' "$raw" \
-    | grep -oE 'class=[^ ]+( reason=[^ ]+)?' \
+# 2. Class × reason — every routing decision categorized.
+clsrsn=$(printf '%s\n' "$raw" \
+    | awk '
+        match($0, /class=[^ ]+/) { c=substr($0,RSTART+6,RLENGTH-6) }
+        match($0, /reason=[^ ]+/){ r=substr($0,RSTART+7,RLENGTH-7) }
+        { if (!r) r="-"; print c, r; r="" }
+    ' \
     | sort | uniq -c | sort -rn \
-    | awk '{ printf "  %5d  %s %s\n", $1, $2, ($3 ? $3 : "") }'
+    | awk '{ printf "  %5d  %-9s %s\n", $1, $2, $3 }' || true)
+section "Class × reason" "$clsrsn"
 
-# Reasoning verbs.
-printf "\nReasoning verbs (when matched)\n"
-verbs=$(printf '%s\n' "$raw" | grep -oE ' verb=[^ ]+' | awk -F= '{print $2}' \
-    | sort | uniq -c | sort -rn || true)
-if [ -n "$verbs" ]; then
-    printf '%s\n' "$verbs" | awk '{ printf "  %5d  %s\n", $1, $2 }'
-else
-    printf "  (none)\n"
-fi
+# 3. Reasoning verbs / lane signals / overrides — single-field histograms.
+section "Reasoning verbs (when matched)" "$(hist_field verb)"
+section "Lane signals"                   "$(hist_field laneSignal 32)"
 
-# Subagents.
-printf "\nSubagents (when detected)\n"
-subs=$(printf '%s\n' "$raw" | grep -oE ' subagent=[^ ]+' | awk -F= '{print $2}' \
-    | sort | uniq -c | sort -rn || true)
-if [ -n "$subs" ]; then
-    printf '%s\n' "$subs" | awk '{ printf "  %5d  %s\n", $1, $2 }'
-else
-    printf "  (none)\n"
-fi
-
-# Lane signals — what triggered the prose/code split.
-printf "\nLane signals\n"
-sigs=$(printf '%s\n' "$raw" | grep -oE ' laneSignal=[^ ]+' | awk -F= '{print $2}' \
-    | sort | uniq -c | sort -rn || true)
-if [ -n "$sigs" ]; then
-    printf '%s\n' "$sigs" | awk '{ printf "  %5d  %s\n", $1, $2 }'
-else
-    printf "  (none)\n"
-fi
-
-# Override usage.
-printf "\nManual @overrides\n"
+# Overrides: extract from class=override lines specifically.
 overrides=$(printf '%s\n' "$raw" | grep -E 'class=override' \
-    | grep -oE ' reason=[^ ]+' | awk -F= '{print $2}' \
-    | sort | uniq -c | sort -rn || true)
-if [ -n "$overrides" ]; then
-    printf '%s\n' "$overrides" | awk '{ printf "  %5d  %s\n", $1, $2 }'
-else
-    printf "  (none)\n"
-fi
+    | grep -oE 'reason=[^ ]+' | awk -F= '{print $2}' \
+    | sort | uniq -c | sort -rn \
+    | awk '{ printf "  %5d  %s\n", $1, $2 }' || true)
+section "Manual @overrides" "$overrides"
 
-# Average ctx by destination tier (cloud vs local). Dest is the last
-# whitespace token on the line; ctx field may be absent (overrides).
-printf "\nAverage ctx by tier\n"
+# 4. Subagent breakdown with local/cloud split — tells you which subagents
+# would benefit from forced cloud routing.
+subbreak=$(printf '%s\n' "$raw" | awk '
+    {
+        if (!match($0, / subagent=[^ ]+/)) next
+        sub_name = substr($0, RSTART+10, RLENGTH-10)
+        # Use $NF for destination to avoid multi-byte arrow byte-arithmetic.
+        tier = ($NF ~ /^anthropic,/) ? "cloud" : "local"
+        n[sub_name]++; t[sub_name "/" tier]++
+    }
+    END {
+        for (s in n) {
+            l = t[s "/local"] + 0; c = t[s "/cloud"] + 0
+            pct = (n[s] > 0) ? 100*c/n[s] : 0
+            printf "  %5d  %-30s local=%-4d cloud=%-4d (%4.0f%% cloud)\n", n[s], s, l, c, pct
+        }
+    }
+' | sort -rn || true)
+section "Subagents (local vs cloud split)" "$subbreak"
+
+# 5. Ctx distribution per class — primary tuning input. If most haiku is
+# under 5K, raising localPerfCtx hurts nothing; if a big bucket is at 15-25K,
+# tuning the threshold reshapes routing significantly.
+printf "\nCtx distribution by class\n"
 printf '%s\n' "$raw" | awk '
+    function bucket(c) {
+        if (c < 2000)   return "<2K  "
+        if (c < 5000)   return "2-5K "
+        if (c < 12000)  return "5-12K"
+        if (c < 20000)  return "12-20K"
+        if (c < 40000)  return "20-40K"
+                        return ">40K "
+    }
+    BEGIN { order = "<2K  |2-5K |5-12K|12-20K|20-40K|>40K " }
+    {
+        if (!match($0, /class=[^ ]+/)) next
+        c = substr($0, RSTART+6, RLENGTH-6)
+        ctx = 0
+        if (match($0, /ctx=[0-9]+/)) ctx = substr($0,RSTART+4,RLENGTH-4)+0
+        b = bucket(ctx)
+        n[c "|" b]++; ntot[c]++
+        seen[c]=1
+    }
+    END {
+        nbuckets = split(order, buckets, "|")
+        for (c in seen) {
+            printf "  %-9s n=%-5d ", c, ntot[c]
+            for (i = 1; i <= nbuckets; i++) {
+                b = buckets[i]
+                v = n[c "|" b] + 0
+                pct = ntot[c] ? 100*v/ntot[c] : 0
+                printf "%s=%-4d(%2.0f%%) ", b, v, pct
+            }
+            printf "\n"
+        }
+    }
+'
+
+# 6. Average ctx by tier.
+avgtier=$(printf '%s\n' "$raw" | awk '
     {
         ctx = 0
-        if (match($0, /ctx=[0-9]+/)) ctx = substr($0, RSTART+4, RLENGTH-4) + 0
-        dest = $NF
-        tier = (dest ~ /^anthropic,/) ? "cloud" : "local"
-        sum[tier] += ctx
-        n[tier]++
+        if (match($0, /ctx=[0-9]+/)) ctx = substr($0,RSTART+4,RLENGTH-4)+0
+        tier = ($NF ~ /^anthropic,/) ? "cloud" : "local"
+        sum[tier] += ctx; n[tier]++
     }
     END {
         for (t in sum) printf "  %-6s %6d req   avg=%6d tokens\n", t, n[t], (n[t] ? sum[t]/n[t] : 0)
     }
-'
+' || true)
+section "Average ctx by tier" "$avgtier"
 
-# Perf-ctx escalations — requests pushed cloud because local would be too
-# slow. The localPerfCtx field on these lines reports the active ceiling.
-# Tune the chezmoi flag down if escalations are rare (most local traffic
-# already fits), or up if they dominate (local barely gets used).
-printf "\nPerf-ctx escalations (soft cloud push, see chezmoi flag localPerfCtx)\n"
-escalations=$(printf '%s\n' "$raw" | grep -E 'reason=perf-ctx-ceiling' || true)
-if [ -n "$escalations" ]; then
-    printf '%s\n' "$escalations" | awk '
-        match($0, /class=[^ ]+/)        { cls = substr($0, RSTART+6, RLENGTH-6) }
-        match($0, /ctx=[0-9]+/)         { ctx = substr($0, RSTART+4, RLENGTH-4) + 0 }
-        match($0, /localPerfCtx=[0-9]+/){ ceil = substr($0, RSTART+13, RLENGTH-13) + 0 }
-        {
-            n[cls]++; sum[cls] += ctx; if (ctx > max[cls]) max[cls] = ctx
-            ceiling = ceil
-        }
-        END {
-            for (c in n) printf "  %5d  %-18s avg=%6d max=%6d (ceiling=%d)\n",
-                n[c], c, sum[c]/n[c], max[c], ceiling
-        }
-    '
-else
-    printf "  (none — either no traffic above ceiling, or localPerfCtx=-1)\n"
-fi
+# 7. Perf-ctx escalations. Avg / max ctx of escalated requests + active
+# ceiling. Lower the ceiling if escalations are rare; raise if they dominate.
+escal=$(printf '%s\n' "$raw" | grep -E 'reason=perf-ctx-ceiling' | awk '
+    match($0, /class=[^ ]+/)        { c = substr($0,RSTART+6, RLENGTH-6) }
+    match($0, /ctx=[0-9]+/)         { x = substr($0,RSTART+4, RLENGTH-4)+0 }
+    match($0, /localPerfCtx=[0-9]+/){ ceil = substr($0,RSTART+13,RLENGTH-13)+0 }
+    { n[c]++; sum[c]+=x; if (x>max[c]) max[c]=x }
+    END {
+        for (c in n) printf "  %5d  %-9s avg=%6d max=%6d (ceiling=%d)\n",
+            n[c], c, sum[c]/n[c], max[c], ceil
+    }
+' || true)
+section "Perf-ctx escalations (chezmoi-flag set routing.localPerfCtx <N>)" \
+    "$escal" \
+    "(none — no traffic above ceiling, or localPerfCtx=-1)"
 
-# Optional: last N prompt snippets when CCR_LOG_PROMPT was on.
+# 8. Optional prompt snippets when CCR_LOG_PROMPT was on.
 prompts=$(printf '%s\n' "$raw" | grep -oE 'prompt="[^"]*"' | tail -10 || true)
 if [ -n "$prompts" ]; then
-    printf "\nRecent prompt snippets (last 10, requires CCR_LOG_PROMPT=1)\n"
+    printf "\nRecent prompt snippets (last 10, requires logPrompt flag)\n"
     printf '%s\n' "$prompts" | sed 's/^/  /'
 fi

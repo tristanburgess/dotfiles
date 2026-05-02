@@ -60,6 +60,14 @@
 {{- $trivialCtx := 12000 -}}
 {{- $localPerfCtx := promptIntOnce . "localPerfCtx" "Soft ctx ceiling above which local is too slow — push to cloud (-1 to disable)" 20000 -}}
 {{- $complexCtx := 60000 -}}
+{{- /* Subagent names sniffed from request system prompts purely for audit
+       logging (subagent=<name> field on log lines). Does not affect
+       routing decisions. Add new agents here as you adopt them. */ -}}
+{{- $knownSubagents := list
+    "cavecrew-investigator" "cavecrew-builder" "cavecrew-reviewer"
+    "prose-craft:prose-review" "prose-craft:craft-review" "prose-craft:learn-review"
+    "claude-code-guide" "statusline-setup"
+    "general-purpose" "Explore" "Plan" -}}
 
 {{- /* OS detection: derive isWSL from kernel.osrelease on Linux */ -}}
 {{- $isWSL := false -}}
@@ -87,9 +95,10 @@ sourceDir = {{ .chezmoi.sourceDir | quote }}
     logPrompt = {{ $logPrompt }}
 
 [data.routing]
-    trivialCtx   = {{ $trivialCtx }}
-    localPerfCtx = {{ $localPerfCtx }}
-    complexCtx   = {{ $complexCtx }}
+    trivialCtx     = {{ $trivialCtx }}
+    localPerfCtx   = {{ $localPerfCtx }}
+    complexCtx     = {{ $complexCtx }}
+    knownSubagents = {{ $knownSubagents | toJson }}
 
 [data.ollama]
     code  = {{ $ollamaCode | quote }}
