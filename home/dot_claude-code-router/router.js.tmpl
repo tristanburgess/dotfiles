@@ -52,12 +52,27 @@
 const DEFAULT_LOCAL = {{ get . "defaultLocal" | default true }};
 const CLOUD_THINKING = {{ get . "cloudThinking" | default true }};
 
-const LOCAL_CODE  = "ollama,qwen3-coder:30b";      // code, tool-heavy, default
-const LOCAL_PROSE = "ollama,gemma3:27b";           // markdown, writing, Notion
-const LOCAL_THINK = "ollama,qwen3:30b-thinking";   // reasoning / thinking field
-const CLOUD_SONNET = "anthropic,claude-sonnet-4-6";
-const CLOUD_OPUS   = "anthropic,claude-opus-4-7";
-const CLOUD_HAIKU  = "anthropic,claude-haiku-4-5-20251001";
+// Audit logging: off by default. Set CCR_LOG_PROMPT=1 in the systemd unit's
+// Environment to include a truncated user-prompt snippet in each [router]
+// log line.
+const LOG_PROMPT = process.env.CCR_LOG_PROMPT === "1" || process.env.CCR_LOG_PROMPT === "true";
+const PROMPT_SNIPPET_LEN = 120;
+
+// Known subagent names (matched as substrings of system prompt blocks).
+// Used purely for audit logging — does not affect routing.
+const KNOWN_SUBAGENTS = [
+  "cavecrew-investigator", "cavecrew-builder", "cavecrew-reviewer",
+  "prose-craft:prose-review", "prose-craft:craft-review", "prose-craft:learn-review",
+  "claude-code-guide", "statusline-setup",
+  "general-purpose", "Explore", "Plan",
+];
+
+const LOCAL_CODE  = "ollama,{{ .ollama.code }}";   // code, tool-heavy, default
+const LOCAL_PROSE = "ollama,{{ .ollama.prose }}";  // markdown, writing, Notion
+const LOCAL_THINK = "ollama,{{ .ollama.think }}";  // reasoning / thinking field
+const CLOUD_SONNET = "anthropic,{{ .cloud.sonnet }}";
+const CLOUD_OPUS   = "anthropic,{{ .cloud.opus }}";
+const CLOUD_HAIKU  = "anthropic,{{ .cloud.haiku }}";
 
 // Reasoning verbs → cloud quality needed.
 const REASONING_KEYWORDS = /\b(explain|why|analyze|architect|design|review|compare|evaluate|investigate|debug|root\s*cause|plan)\b/i;
@@ -73,9 +88,15 @@ const PROSE_TASK_KEYWORDS = /\b(commit\s+message|changelog|slack\s+message|desig
 // Code file extensions — strong signal to stay on code model.
 const CODE_FILE_EXT = /\b\w+\.(go|py|ts|tsx|js|jsx|rs|sh|bash|zsh|c|cpp|java|rb|swift|kt|cs|tf|jsonnet|yaml|json|toml)\b/i;
 
-// Classification thresholds.
-const TRIVIAL_CTX = 12000;  // Claude Code baseline overhead ~10K; 12K catches small asks
-const COMPLEX_CTX = 60000;  // beyond this, route cloud (matches CCR longContextThreshold)
+// Classification thresholds — see .chezmoi.toml.tmpl [data.routing]
+// for the rationale and tuning guidance behind each value.
+const TRIVIAL_CTX    = {{ .routing.trivialCtx }};    // ≤ this: small enough for local trivial lane
+const LOCAL_PERF_CTX = {{ .routing.localPerfCtx }};  // > this: local prefill is too slow on iGPU; push cloud (-1 disables)
+const COMPLEX_CTX    = {{ .routing.complexCtx }};    // > this: exceeds local model context window; force cloud
+
+function localPerfExceeded(ctx) {
+  return LOCAL_PERF_CTX >= 0 && ctx > LOCAL_PERF_CTX;
+}
 
 function cloudFor(model) {
   if (/opus/i.test(model)) return CLOUD_OPUS;
@@ -156,61 +177,107 @@ function needsThinking(body) {
 
 // Manual override keywords. Cloud overrides win over local overrides
 // when both appear (cloud is the more explicit "send remote" signal).
-// Returns destination string or null.
+// Returns { dest, key } or null.
 function manualOverride(body) {
   const msg = lastUserMessage(body);
-  if (/@cloudthink\b/i.test(msg)) return CLOUD_OPUS;
-  if (/@cloudcode\b/i.test(msg))  return CLOUD_SONNET;
-  if (/@cloudprose\b/i.test(msg)) return CLOUD_SONNET;
-  if (/@think\b/i.test(msg)) return LOCAL_THINK;
-  if (/@prose\b/i.test(msg)) return LOCAL_PROSE;
-  if (/@code\b/i.test(msg))  return LOCAL_CODE;
+  if (/@cloudthink\b/i.test(msg)) return { dest: CLOUD_OPUS,   key: "@cloudthink" };
+  if (/@cloudcode\b/i.test(msg))  return { dest: CLOUD_SONNET, key: "@cloudcode"  };
+  if (/@cloudprose\b/i.test(msg)) return { dest: CLOUD_SONNET, key: "@cloudprose" };
+  if (/@think\b/i.test(msg))      return { dest: LOCAL_THINK,  key: "@think"      };
+  if (/@prose\b/i.test(msg))      return { dest: LOCAL_PROSE,  key: "@prose"      };
+  if (/@code\b/i.test(msg))       return { dest: LOCAL_CODE,   key: "@code"       };
   return null;
 }
 
 // Decide which local lane to use based on prose/code signals.
 // Thinking lane is selected by the caller (see router export) when a
 // `thinking` field is present and ctx is within local-friendly bounds.
-function localModelFor(body) {
+// Returns { dest, signal } where signal explains why this lane was chosen.
+function localLaneFor(body) {
   const msg = lastUserMessage(body);
   // gemma3:27b rejects requests with tools. Force code lane in that case.
   const proseAllowed = !hasTools(body);
 
   // Code file extension in message → code lane.
-  if (CODE_FILE_EXT.test(msg)) return LOCAL_CODE;
+  let m = CODE_FILE_EXT.exec(msg);
+  if (m) return { dest: LOCAL_CODE, signal: `code-ext:.${m[1]}` };
 
   // Prose signals → prose lane (only if no tools in request).
-  if (proseAllowed && (PROSE_FILE_EXT.test(msg) || PROSE_TASK_KEYWORDS.test(msg))) {
-    return LOCAL_PROSE;
+  if (proseAllowed) {
+    m = PROSE_FILE_EXT.exec(msg);
+    if (m) return { dest: LOCAL_PROSE, signal: `prose-ext:.${m[1]}` };
+    m = PROSE_TASK_KEYWORDS.exec(msg);
+    if (m) {
+      const kw = m[0].toLowerCase().replace(/\s+/g, "-");
+      return { dest: LOCAL_PROSE, signal: `prose-keyword:${kw}` };
+    }
   }
 
   // Scan recent tool_use names for file extensions as a tiebreaker.
   if (Array.isArray(body && body.messages)) {
     for (let i = body.messages.length - 1; i >= 0; i--) {
-      const m = body.messages[i];
-      if (m.role !== "assistant") continue;
-      const content = Array.isArray(m.content) ? m.content : [];
+      const msgItem = body.messages[i];
+      if (msgItem.role !== "assistant") continue;
+      const content = Array.isArray(msgItem.content) ? msgItem.content : [];
       for (const c of content) {
         if (c && c.type === "tool_use" && c.input) {
           const path = JSON.stringify(c.input);
-          if (CODE_FILE_EXT.test(path)) return LOCAL_CODE;
-          if (proseAllowed && PROSE_FILE_EXT.test(path)) return LOCAL_PROSE;
+          let m2 = CODE_FILE_EXT.exec(path);
+          if (m2) return { dest: LOCAL_CODE, signal: `tool-tiebreaker-code:.${m2[1]}` };
+          if (proseAllowed) {
+            m2 = PROSE_FILE_EXT.exec(path);
+            if (m2) return { dest: LOCAL_PROSE, signal: `tool-tiebreaker-prose:.${m2[1]}` };
+          }
         }
       }
     }
   }
 
-  return LOCAL_CODE; // default: code lane
+  return { dest: LOCAL_CODE, signal: "default-code" };
+}
+
+// Sniff body.system for a known subagent name. Heuristic — matches
+// substring in any system block. Audit-only; never affects routing.
+function detectSubagent(body) {
+  let sys = "";
+  if (typeof body.system === "string") {
+    sys = body.system;
+  } else if (Array.isArray(body.system)) {
+    for (const s of body.system) {
+      if (s && typeof s.text === "string") sys += s.text + " ";
+    }
+  }
+  if (!sys) return null;
+  for (const name of KNOWN_SUBAGENTS) {
+    if (sys.includes(name)) return name;
+  }
+  return null;
+}
+
+// Truncated single-line snippet of last user message, gated by LOG_PROMPT.
+// Quotes and escapes are sanitized so the result is safe to embed in a
+// space-separated key=value log line.
+function promptSnippet(body) {
+  if (!LOG_PROMPT) return null;
+  const msg = lastUserMessage(body);
+  if (!msg) return null;
+  const flat = msg.replace(/\s+/g, " ").trim();
+  const trunc = flat.length > PROMPT_SNIPPET_LEN
+    ? flat.slice(0, PROMPT_SNIPPET_LEN) + "…"
+    : flat;
+  return trunc.replace(/"/g, "'");
 }
 
 function classify(body) {
   const ctx = estimateTokens(body);
-  const hasReasoningVerb = REASONING_KEYWORDS.test(lastUserMessage(body));
+  const verbMatch = REASONING_KEYWORDS.exec(lastUserMessage(body));
+  const reasoningVerb = verbMatch ? verbMatch[0].toLowerCase().replace(/\s+/g, "-") : null;
+  const hasReasoningVerb = !!verbMatch;
   const inToolLoop = hasPriorToolUse(body);
   const needsServerTool = needsServerSideTools(body);
   const wantsThinking = needsThinking(body);
 
-  const signals = { ctx, hasReasoningVerb, inToolLoop, needsServerTool, wantsThinking };
+  const signals = { ctx, hasReasoningVerb, reasoningVerb, inToolLoop, needsServerTool, wantsThinking };
 
   // Server-side tools are Anthropic-only — always cloud.
   if (needsServerTool) return { class: "complex", reason: "server-side-tool", signals };
@@ -232,6 +299,24 @@ function log(reqId, model, cls, reason, dest, extra) {
   );
 }
 
+// Build the trailing audit fields shared across log lines. Returns a string
+// suitable for the `extra` slot — k=v pairs, space-separated, no leading
+// space (caller adds one).
+function auditExtra(body, fields) {
+  const parts = [];
+  for (const [k, v] of Object.entries(fields)) {
+    if (v === undefined || v === null || v === "") continue;
+    parts.push(`${k}=${v}`);
+  }
+  const sub = detectSubagent(body);
+  if (sub) parts.push(`subagent=${sub}`);
+  const tc = Array.isArray(body && body.tools) ? body.tools.length : 0;
+  if (tc) parts.push(`toolCount=${tc}`);
+  const snip = promptSnippet(body);
+  if (snip) parts.push(`prompt="${snip}"`);
+  return parts.join(" ");
+}
+
 module.exports = async function router(req /*, config */) {
   const body = req?.body || {};
   const model = body.model || "";
@@ -240,58 +325,87 @@ module.exports = async function router(req /*, config */) {
   // Highest priority: explicit @keyword override anywhere in the last user msg.
   const override = manualOverride(body);
   if (override) {
-    log(reqId, model, "override", null, override);
-    return override;
+    log(reqId, model, "override", override.key, override.dest, auditExtra(body, {}));
+    return override.dest;
   }
 
-  // Haiku (subagents): local unless Anthropic-only feature needed.
+  // Haiku (subagents): local unless Anthropic-only feature needed or
+  // ctx is too large for local to handle in reasonable time.
   if (/haiku/i.test(model)) {
+    const ctx = estimateTokens(body);
     if (needsServerSideTools(body)) {
-      log(reqId, model, "haiku-cloud", "server-side-tool", CLOUD_HAIKU);
+      log(reqId, model, "haiku-cloud", "server-side-tool", CLOUD_HAIKU,
+        auditExtra(body, { ctx }));
       return CLOUD_HAIKU;
     }
     if (needsThinking(body)) {
       if (CLOUD_THINKING) {
-        log(reqId, model, "haiku-cloud", "thinking-cloud-default", CLOUD_OPUS);
+        log(reqId, model, "haiku-cloud", "thinking-cloud-default", CLOUD_OPUS,
+          auditExtra(body, { ctx, cloudThinking: CLOUD_THINKING }));
         return CLOUD_OPUS;
       }
-      const ctx = estimateTokens(body);
       if (ctx > COMPLEX_CTX) {
-        log(reqId, model, "haiku-cloud", "thinking-long-context", CLOUD_OPUS);
+        log(reqId, model, "haiku-cloud", "thinking-long-context", CLOUD_OPUS,
+          auditExtra(body, { ctx, cloudThinking: CLOUD_THINKING }));
         return CLOUD_OPUS;
       }
-      log(reqId, model, "haiku-think", "thinking-enabled", LOCAL_THINK);
+      log(reqId, model, "haiku-think", "thinking-enabled", LOCAL_THINK,
+        auditExtra(body, { ctx, cloudThinking: CLOUD_THINKING }));
       return LOCAL_THINK;
     }
-    const dest = localModelFor(body);
-    log(reqId, model, "haiku", null, dest);
-    return dest;
+    if (localPerfExceeded(ctx)) {
+      log(reqId, model, "haiku-cloud", "perf-ctx-ceiling", CLOUD_HAIKU,
+        auditExtra(body, { ctx, localPerfCtx: LOCAL_PERF_CTX }));
+      return CLOUD_HAIKU;
+    }
+    const lane = localLaneFor(body);
+    log(reqId, model, "haiku", null, lane.dest,
+      auditExtra(body, { ctx, laneSignal: lane.signal }));
+    return lane.dest;
   }
 
   // Sonnet + Opus: classify → decide cloud vs local model.
   if (/sonnet|opus/i.test(model)) {
     const decision = classify(body);
-    const local = localModelFor(body);
+    const lane = localLaneFor(body);
     const sig = decision.signals;
     let dest;
 
+    let perfEscalated = false;
     if (decision.class === "trivial") {
-      dest = local;
+      dest = lane.dest;
     } else if (decision.class === "thinking") {
       dest = CLOUD_THINKING ? CLOUD_OPUS : LOCAL_THINK;
     } else if (decision.class === "complex") {
       // Long-ctx + thinking is a "big plan" — escape to Opus regardless of
       // incoming tier. Other complex reasons preserve the requested tier.
       dest = (sig.wantsThinking && sig.ctx > COMPLEX_CTX) ? CLOUD_OPUS : cloudFor(model);
+    } else if (localPerfExceeded(sig.ctx)) {
+      // Borderline + ctx above the soft local ceiling: local prefill is
+      // too slow on this hardware, force cloud regardless of defaultLocal.
+      dest = cloudFor(model);
+      perfEscalated = true;
     } else {
-      dest = DEFAULT_LOCAL ? local : cloudFor(model);
+      dest = DEFAULT_LOCAL ? lane.dest : cloudFor(model);
     }
 
-    log(reqId, model, decision.class, decision.reason, dest,
-      `ctx=${sig.ctx} reasoning=${sig.hasReasoningVerb} toolLoop=${sig.inToolLoop}` +
-      ` serverTool=${sig.needsServerTool || false} thinking=${sig.wantsThinking || false}` +
-      ` tools=${hasTools(body)} cloudThinking=${CLOUD_THINKING}` +
-      ` localLane=${local.split(",")[1]}`);
+    log(reqId, model,
+      perfEscalated ? "borderline-cloud" : decision.class,
+      perfEscalated ? "perf-ctx-ceiling" : decision.reason,
+      dest, auditExtra(body, {
+        ctx: sig.ctx,
+        reasoning: sig.hasReasoningVerb,
+        verb: sig.reasoningVerb,
+        toolLoop: sig.inToolLoop,
+        serverTool: sig.needsServerTool || false,
+        thinking: sig.wantsThinking || false,
+        tools: hasTools(body),
+        cloudThinking: CLOUD_THINKING,
+        defaultLocal: decision.class === "borderline" ? DEFAULT_LOCAL : undefined,
+        localPerfCtx: perfEscalated ? LOCAL_PERF_CTX : undefined,
+        laneSignal: lane.signal,
+        lane: lane.dest.split(",")[1],
+      }));
     return dest;
   }
 

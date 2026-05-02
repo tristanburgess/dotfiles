@@ -23,9 +23,9 @@ set -euo pipefail
 #          for chain-of-thought reasoning. Routes requests with the
 #          Anthropic `thinking` field set, when ctx ≤ 60K.
 
-CODE_MODEL="qwen3-coder:30b"
-PROSE_MODEL="gemma3:27b"
-THINK_MODEL="qwen3:30b-thinking"
+CODE_MODEL="{{ .ollama.code }}"
+PROSE_MODEL="{{ .ollama.prose }}"
+THINK_MODEL="{{ .ollama.think }}"
 
 ollama_service_registered() {
     systemctl list-unit-files ollama.service >/dev/null 2>&1
@@ -88,4 +88,122 @@ pull_if_missing "$THINK_MODEL"
 
 printf "Ollama ready. Models: %s, %s, %s. Vulkan backend enabled.\n" \
     "$CODE_MODEL" "$PROSE_MODEL" "$THINK_MODEL"
+{{- else if and .isLinuxBaremetal .installClaude -}}
+#!/bin/bash
+set -euo pipefail
+
+# useCcr=false teardown. Re-runs when the rendered script content changes
+# (i.e., when the flag flips from true → false). Stops the Ollama service
+# and Vulkan override, then prompts to remove models + uninstall binary.
+
+CODE_MODEL="{{ .ollama.code }}"
+PROSE_MODEL="{{ .ollama.prose }}"
+THINK_MODEL="{{ .ollama.think }}"
+
+if ! command -v ollama >/dev/null 2>&1; then
+    # Nothing to tear down.
+    exit 0
+fi
+
+cat <<'EOF'
+
+  ┌─ ccr teardown ─────────────────────────────────────────────────
+  │
+  │  useCcr=false detected — tearing down local LLM stack.
+  │
+  │  This script will:
+  │    • Stop and disable ollama.service
+  │    • Remove the Vulkan systemd drop-in
+  │
+  │  You will then be prompted (skipped if non-interactive):
+  │    • Remove the three local models (~55 GB freed)
+  │    • Uninstall the ollama binary
+  │
+  └─────────────────────────────────────────────────────────────────
+
+EOF
+
+# Stop + disable service. `|| true` because the unit may already be
+# stopped/disabled, and systemctl exits non-zero in that case.
+if systemctl is-active --quiet ollama.service 2>/dev/null; then
+    printf "Stopping ollama.service...\n"
+    sudo systemctl stop ollama.service || true
+fi
+if systemctl is-enabled --quiet ollama.service 2>/dev/null; then
+    printf "Disabling ollama.service...\n"
+    sudo systemctl disable ollama.service || true
+fi
+
+# Remove Vulkan override.
+OVERRIDE_DIR="/etc/systemd/system/ollama.service.d"
+OVERRIDE_FILE="$OVERRIDE_DIR/vulkan.conf"
+if sudo test -f "$OVERRIDE_FILE"; then
+    printf "Removing Vulkan systemd drop-in...\n"
+    sudo rm -f "$OVERRIDE_FILE"
+    sudo rmdir --ignore-fail-on-non-empty "$OVERRIDE_DIR" 2>/dev/null || true
+    sudo systemctl daemon-reload || true
+fi
+
+printf "Ollama service stopped and disabled.\n"
+
+# Interactive prompts for destructive removal. Skip if no TTY (CI / pipes).
+if ! [ -c /dev/tty ] || ! { : </dev/tty; } 2>/dev/null; then
+    printf "\nNon-interactive shell — skipping model/binary removal.\n"
+    printf "To finish cleanup manually:\n"
+    printf "  sudo systemctl start ollama.service\n"
+    printf "  ollama rm %s %s %s\n" "$CODE_MODEL" "$PROSE_MODEL" "$THINK_MODEL"
+    printf "  sudo systemctl stop ollama.service\n"
+    printf "  sudo /usr/local/bin/ollama-uninstall.sh   # if you also want the binary gone\n"
+    exit 0
+fi
+
+# Model removal prompt.
+printf "\n"
+read -rp "Remove the three local models (~55 GB freed)? [y/N] " ans </dev/tty
+case "$ans" in
+    [yY]|[yY][eE][sS])
+        # ollama rm needs the daemon running. Briefly start, rm, stop.
+        sudo systemctl start ollama.service || true
+        printf "Waiting for Ollama daemon..."
+        for _ in $(seq 1 30); do
+            if curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
+                printf " ready.\n"
+                break
+            fi
+            sleep 1
+            printf "."
+        done
+        for m in "$CODE_MODEL" "$PROSE_MODEL" "$THINK_MODEL"; do
+            if ollama rm "$m" 2>/dev/null; then
+                printf "Removed %s\n" "$m"
+            else
+                printf "  (skip) %s not present\n" "$m"
+            fi
+        done
+        sudo systemctl stop ollama.service || true
+        printf "Models removed.\n"
+        ;;
+    *)
+        printf "Skipped. Models remain in ~/.ollama/models.\n"
+        ;;
+esac
+
+# Binary uninstall prompt.
+printf "\n"
+read -rp "Uninstall the ollama binary entirely? [y/N] " ans </dev/tty
+case "$ans" in
+    [yY]|[yY][eE][sS])
+        if [ -x /usr/local/bin/ollama-uninstall.sh ]; then
+            sudo /usr/local/bin/ollama-uninstall.sh
+            printf "Ollama uninstalled.\n"
+        else
+            printf "/usr/local/bin/ollama-uninstall.sh not found. Manual cleanup required:\n"
+            printf "  sudo rm $(command -v ollama)\n"
+            printf "  sudo rm -rf ~/.ollama /usr/share/ollama\n"
+        fi
+        ;;
+    *)
+        printf "Ollama binary kept at %s.\n" "$(command -v ollama)"
+        ;;
+esac
 {{- end -}}

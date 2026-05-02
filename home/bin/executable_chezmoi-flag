@@ -1,0 +1,132 @@
+#!/bin/bash
+set -euo pipefail
+
+# chezmoi-flag — get / set / toggle chezmoi [data] flags without hand-editing.
+#
+# Reads the canonical value via `chezmoi execute-template`. Writes via awk
+# (atomic temp + mv) scoped to the [data] block only. Unknown flags are
+# rejected so you can't accidentally create one that no template consumes.
+#
+# Usage:
+#   chezmoi-flag list
+#   chezmoi-flag get <flag>
+#   chezmoi-flag set <flag> <true|false|"string"|number>
+#   chezmoi-flag toggle <flag>          # bool only
+
+CONFIG="${HOME}/.config/chezmoi/chezmoi.toml"
+
+usage() {
+    sed -n '/^# /,/^$/p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+valid_name() {
+    [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]
+}
+
+valid_value() {
+    case "$1" in
+        true|false)         return 0 ;;
+        \"*\")              return 0 ;;
+        [0-9]*)             return 0 ;;
+        *)                  return 1 ;;
+    esac
+}
+
+get_flag() {
+    chezmoi execute-template "{{ .${1} }}" 2>/dev/null
+}
+
+flag_exists_in_data() {
+    awk -v key="$1" '
+        /^\[data\]/        { in_data=1; next }
+        /^\[/              { in_data=0 }
+        in_data && $1==key { found=1; exit }
+        END                { exit !found }
+    ' "$CONFIG"
+}
+
+set_flag() {
+    local flag="$1" value="$2"
+    if ! flag_exists_in_data "$flag"; then
+        printf "Flag '%s' not found in [data] block of %s\n" "$flag" "$CONFIG" >&2
+        printf "Add it via promptBoolOnce in .chezmoi.toml.tmpl, then run chezmoi init.\n" >&2
+        exit 1
+    fi
+
+    local tmp
+    tmp=$(mktemp "${CONFIG}.XXXXXX")
+    trap 'rm -f "$tmp"' EXIT
+
+    awk -v key="$flag" -v val="$value" '
+        BEGIN              { in_data=0 }
+        /^\[data\]$/       { in_data=1; print; next }
+        /^\[/              { in_data=0; print; next }
+        in_data && $1==key {
+            match($0, /^[[:space:]]*/)
+            indent = substr($0, 1, RLENGTH)
+            print indent key " = " val
+            next
+        }
+                           { print }
+    ' "$CONFIG" > "$tmp"
+
+    mv "$tmp" "$CONFIG"
+    trap - EXIT
+
+    printf "%s = %s\n" "$flag" "$value"
+    chezmoi apply
+}
+
+toggle_flag() {
+    local flag="$1" cur
+    cur=$(get_flag "$flag")
+    case "$cur" in
+        true)  set_flag "$flag" false ;;
+        false) set_flag "$flag" true  ;;
+        *)
+            printf "Flag '%s' is not a boolean (current: %s).\n" "$flag" "$cur" >&2
+            exit 1
+            ;;
+    esac
+}
+
+list_flags() {
+    awk '
+        /^\[data\]$/   { in_data=1; print "[data]"; next }
+        /^\[data\./    { sub(/^\[/,""); sub(/\]$/,""); cur_section=$0; in_data=1; print "[" cur_section "]"; next }
+        /^\[/          { in_data=0 }
+        in_data && /=/ {
+            sub(/^[[:space:]]+/,"")
+            print "  " $0
+        }
+    ' "$CONFIG"
+}
+
+case "${1:-}" in
+    list)
+        list_flags
+        ;;
+    get)
+        valid_name "${2:-}" || { usage >&2; exit 1; }
+        get_flag "$2"
+        ;;
+    set)
+        valid_name "${2:-}" || { usage >&2; exit 1; }
+        valid_value "${3:-}" || {
+            printf "Invalid value: must be true|false|\"quoted\"|number\n" >&2
+            exit 1
+        }
+        set_flag "$2" "$3"
+        ;;
+    toggle)
+        valid_name "${2:-}" || { usage >&2; exit 1; }
+        toggle_flag "$2"
+        ;;
+    -h|--help|"")
+        usage
+        ;;
+    *)
+        usage >&2
+        exit 1
+        ;;
+esac

@@ -11,11 +11,11 @@
       "api_base_url": "https://api.anthropic.com/v1/messages",
       "api_key": "$ANTHROPIC_API_KEY",
       "models": [
-        "claude-opus-4-7",
-        "claude-opus-4-7[1m]",
-        "claude-sonnet-4-6",
-        "claude-sonnet-4-6[1m]",
-        "claude-haiku-4-5-20251001",
+        "{{ .cloud.opus }}",
+        "{{ .cloud.opus }}[1m]",
+        "{{ .cloud.sonnet }}",
+        "{{ .cloud.sonnet }}[1m]",
+        "{{ .cloud.haiku }}",
         "sonnet",
         "sonnet[1m]",
         "opus",
@@ -31,18 +31,18 @@
       "api_base_url": "http://localhost:11434/v1/chat/completions",
       "api_key": "ollama",
       "models": [
-        "qwen3-coder:30b",
-        "gemma3:27b",
-        "qwen3:30b-thinking"
+        "{{ .ollama.code }}",
+        "{{ .ollama.prose }}",
+        "{{ .ollama.think }}"
       ]
     }
   ],
   "Router": {
-    "default":     "anthropic,claude-sonnet-4-6",
-    "background":  "ollama,qwen3-coder:30b",
-    "think":       "ollama,qwen3:30b-thinking",
-    "longContext": "anthropic,claude-sonnet-4-6",
+    "default":     "anthropic,{{ .cloud.sonnet }}",
+    "background":  "ollama,{{ .ollama.code }}",
+    "think":       "ollama,{{ .ollama.think }}",
+    "longContext": "anthropic,{{ .cloud.sonnet }}",
     "longContextThreshold": 60000,
-    "webSearch":   "anthropic,claude-sonnet-4-6"
+    "webSearch":   "anthropic,{{ .cloud.sonnet }}"
   }
 }

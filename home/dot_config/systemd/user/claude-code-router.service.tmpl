@@ -10,6 +10,11 @@ Type=simple
 EnvironmentFile=-%h/.claude-code-router/secrets.env
 # mise shims live under ~/.local/share/mise/shims; PATH must include it.
 Environment=PATH=%h/.local/share/mise/shims:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+{{- if get . "logPrompt" | default false }}
+# Toggled via the logPrompt chezmoi flag — chezmoi apply re-renders this
+# file and the run_onchange ccr-service script restarts the unit.
+Environment=CCR_LOG_PROMPT=1
+{{- end }}
 ExecStart=%h/.local/share/mise/shims/ccr start
 Restart=on-failure
 RestartSec=5s
