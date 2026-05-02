@@ -47,12 +47,13 @@
       "labels": ["major-update"]
     },
     {
-      "description": "For these tools, both the built-in mise manager and the custom regex manager open PRs for the same bump (e.g. #93/#94 difftastic, #80/#81 gh, #87/#88 starship, #76/#77 uv, #96/#97 claude-code). Disable the mise manager for them; the regex manager handles the bump using the upstream slug from the `# renovate: packageName=...` annotation. Add other tools here only if/when duplicate PRs are observed for them.",
+      "description": "For tools listed below, both the built-in mise manager and the custom regex manager open PRs for the same bump. Disable the mise manager; the regex manager handles the bump using the upstream slug from the `# renovate: packageName=...` annotation. Add other tools here only if/when duplicate PRs are observed for them.",
       "matchManagers": ["mise"],
       "matchPackageNames": [
         "claude-code",
         "difftastic",
         "gh",
+        "golangci-lint",
         "starship",
         "uv"
       ],
