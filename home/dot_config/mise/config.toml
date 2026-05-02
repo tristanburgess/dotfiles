@@ -56,7 +56,7 @@ jb = { version = "0.6.0", os = ["linux"] }
 go-jsonnet = { version = "0.22.0", os = ["linux"] }
 # Cloud CLIs: installed via winget on Windows
 # renovate: packageName=aws/aws-cli datasource=github-releases
-awscli = { version = "2.34.40", os = ["linux"] }
+awscli = { version = "2.34.41", os = ["linux"] }
 # renovate: packageName=azure-cli datasource=pypi
 azure-cli = { version = "2.85.0", os = ["linux"] }
 # renovate: gcloud
