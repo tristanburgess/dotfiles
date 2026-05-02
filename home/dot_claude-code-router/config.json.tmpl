@@ -1,0 +1,47 @@
+{
+  "LOG": true,
+  "LOG_LEVEL": "info",
+  "HOST": "127.0.0.1",
+  "PORT": 3456,
+  "API_TIMEOUT_MS": 600000,
+  "CUSTOM_ROUTER_PATH": "{{ .chezmoi.homeDir }}/.claude-code-router/router.js",
+  "Providers": [
+    {
+      "name": "anthropic",
+      "api_base_url": "https://api.anthropic.com/v1/messages",
+      "api_key": "$ANTHROPIC_API_KEY",
+      "models": [
+        "claude-opus-4-7",
+        "claude-opus-4-7[1m]",
+        "claude-sonnet-4-6",
+        "claude-sonnet-4-6[1m]",
+        "claude-haiku-4-5-20251001",
+        "sonnet",
+        "sonnet[1m]",
+        "opus",
+        "opus[1m]",
+        "haiku"
+      ],
+      "transformer": {
+        "use": ["Anthropic"]
+      }
+    },
+    {
+      "name": "ollama",
+      "api_base_url": "http://localhost:11434/v1/chat/completions",
+      "api_key": "ollama",
+      "models": [
+        "qwen3-coder:30b",
+        "gemma3:27b"
+      ]
+    }
+  ],
+  "Router": {
+    "default":     "anthropic,claude-sonnet-4-6",
+    "background":  "ollama,qwen3-coder:30b",
+    "think":       "anthropic,claude-opus-4-7",
+    "longContext": "anthropic,claude-sonnet-4-6",
+    "longContextThreshold": 60000,
+    "webSearch":   "anthropic,claude-sonnet-4-6"
+  }
+}

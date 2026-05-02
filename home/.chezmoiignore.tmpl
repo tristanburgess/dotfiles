@@ -47,3 +47,9 @@ bin/toggle-dnd.sh
 # ─── User opted out of Codex at init time ───
 .codex/**
 {{ end }}
+
+{{ if not (get . "useCcr" | default true) }}
+# ─── User opted out of tiered model routing (no CCR + Ollama) ───
+.claude-code-router/**
+.config/systemd/user/claude-code-router.service
+{{ end }}

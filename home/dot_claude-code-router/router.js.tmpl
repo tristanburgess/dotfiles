@@ -1,0 +1,223 @@
+// Custom router for claude-code-router.
+// Returns "provider,model" string or null (fall back to static Router rules).
+//
+// Local model split:
+//   LOCAL_PROSE (gemma3:27b)   — .md/.txt tasks, commit messages, Slack,
+//                                design docs, SKILL files, general writing
+//   LOCAL_CODE  (qwen3-coder:30b) — code files, tool-heavy agentic work,
+//                                default for everything else
+//
+// Tier policy:
+//   haiku  → LOCAL (model picked by prose/code heuristic) unless Anthropic-only
+//             features requested (web_search, thinking) → cloud haiku
+//   sonnet/opus → classified per request:
+//     complex    → cloud (model tier preserved)
+//     trivial    → LOCAL (model picked by prose/code heuristic)
+//     borderline → DEFAULT_LOCAL ? LOCAL : cloud
+//
+// Manual local-model override (anywhere in the user message):
+//   @prose  → force LOCAL_PROSE for this request
+//   @code   → force LOCAL_CODE for this request
+// To switch all subsequent requests, use Claude Code's /model command:
+//   /model ollama,gemma3:27b      — all calls → prose model
+//   /model ollama,qwen3-coder:30b — all calls → code model
+//   /model anthropic,claude-sonnet-4-6 — back to cloud
+//
+// Audit:
+//   journalctl --user -u claude-code-router -g '\[router\]' -n 50
+
+const DEFAULT_LOCAL = {{ get . "defaultLocal" | default true }};
+
+const LOCAL_CODE  = "ollama,qwen3-coder:30b";  // code, tool-heavy, default
+const LOCAL_PROSE = "ollama,gemma3:27b";        // markdown, writing, Notion
+const CLOUD_SONNET = "anthropic,claude-sonnet-4-6";
+const CLOUD_OPUS   = "anthropic,claude-opus-4-7";
+const CLOUD_HAIKU  = "anthropic,claude-haiku-4-5-20251001";
+
+// Reasoning verbs → cloud quality needed.
+const REASONING_KEYWORDS = /\b(explain|why|analyze|architect|design|review|compare|evaluate|investigate|debug|root\s*cause|plan)\b/i;
+
+// Server-side tool type prefixes — Anthropic API only.
+const SERVER_SIDE_TOOL_TYPES = /^(web_search|computer|code_execution|bash_|text_editor)/;
+
+// Prose-lane signals in user message or file paths.
+// Matches explicit .md/.txt references, common writing tasks, Notion/Slack/docs.
+const PROSE_FILE_EXT = /\b\w+\.(md|txt|markdown|rst)\b/i;
+const PROSE_TASK_KEYWORDS = /\b(commit\s+message|changelog|slack\s+message|design\s+doc|SKILL\.md|skill\s+file|prose|readme|announcement|blog\s+post|email|write\s+(a|the|up|this|an))\b/i;
+
+// Code file extensions — strong signal to stay on code model.
+const CODE_FILE_EXT = /\b\w+\.(go|py|ts|tsx|js|jsx|rs|sh|bash|zsh|c|cpp|java|rb|swift|kt|cs|tf|jsonnet|yaml|json|toml)\b/i;
+
+// Classification thresholds.
+const TRIVIAL_CTX = 12000;  // Claude Code baseline overhead ~10K; 12K catches small asks
+const COMPLEX_CTX = 60000;  // beyond this, route cloud (matches CCR longContextThreshold)
+
+function cloudFor(model) {
+  if (/opus/i.test(model)) return CLOUD_OPUS;
+  return CLOUD_SONNET;
+}
+
+function estimateTokens(body) {
+  if (!body) return 0;
+  let chars = 0;
+  if (Array.isArray(body.messages)) {
+    for (const m of body.messages) {
+      if (typeof m.content === "string") {
+        chars += m.content.length;
+      } else if (Array.isArray(m.content)) {
+        for (const c of m.content) {
+          if (typeof c === "string") chars += c.length;
+          else if (c && typeof c.text === "string") chars += c.text.length;
+        }
+      }
+    }
+  }
+  if (typeof body.system === "string") chars += body.system.length;
+  else if (Array.isArray(body.system)) {
+    for (const s of body.system) {
+      if (s && typeof s.text === "string") chars += s.text.length;
+    }
+  }
+  return Math.ceil(chars / 4);
+}
+
+function lastUserMessage(body) {
+  if (!Array.isArray(body && body.messages)) return "";
+  for (let i = body.messages.length - 1; i >= 0; i--) {
+    const m = body.messages[i];
+    if (m.role !== "user") continue;
+    if (typeof m.content === "string") return m.content;
+    if (Array.isArray(m.content)) {
+      return m.content.map(c => (typeof c === "string" ? c : c.text || "")).join(" ");
+    }
+  }
+  return "";
+}
+
+function hasPriorToolUse(body) {
+  if (!Array.isArray(body && body.messages)) return false;
+  for (const m of body.messages) {
+    if (m.role !== "assistant") continue;
+    const content = Array.isArray(m.content) ? m.content : [];
+    for (const c of content) {
+      if (c && c.type === "tool_use") return true;
+    }
+  }
+  return false;
+}
+
+function needsServerSideTools(body) {
+  const tools = body && body.tools;
+  if (!Array.isArray(tools)) return false;
+  for (const t of tools) {
+    const type = t && (t.type || t.name);
+    if (typeof type === "string" && SERVER_SIDE_TOOL_TYPES.test(type)) return true;
+  }
+  return false;
+}
+
+function needsThinking(body) {
+  const t = body && body.thinking;
+  return !!(t && (t.type === "enabled" || t.budget_tokens));
+}
+
+// Decide which local model to use based on prose vs code signals.
+// User can override inline with @prose or @code in their message.
+function localModelFor(body) {
+  const msg = lastUserMessage(body);
+
+  // Explicit inline override — highest priority.
+  if (/@prose\b/i.test(msg)) return LOCAL_PROSE;
+  if (/@code\b/i.test(msg))  return LOCAL_CODE;
+
+  // Code file extension in message → code lane.
+  if (CODE_FILE_EXT.test(msg)) return LOCAL_CODE;
+
+  // Prose signals → prose lane.
+  if (PROSE_FILE_EXT.test(msg) || PROSE_TASK_KEYWORDS.test(msg)) return LOCAL_PROSE;
+
+  // Scan recent tool_use names for file extensions as a tiebreaker.
+  if (Array.isArray(body && body.messages)) {
+    for (let i = body.messages.length - 1; i >= 0; i--) {
+      const m = body.messages[i];
+      if (m.role !== "assistant") continue;
+      const content = Array.isArray(m.content) ? m.content : [];
+      for (const c of content) {
+        if (c && c.type === "tool_use" && c.input) {
+          const path = JSON.stringify(c.input);
+          if (CODE_FILE_EXT.test(path)) return LOCAL_CODE;
+          if (PROSE_FILE_EXT.test(path)) return LOCAL_PROSE;
+        }
+      }
+    }
+  }
+
+  return LOCAL_CODE; // default: code lane
+}
+
+function classify(body) {
+  const ctx = estimateTokens(body);
+  const hasReasoningVerb = REASONING_KEYWORDS.test(lastUserMessage(body));
+  const inToolLoop = hasPriorToolUse(body);
+  const needsServerTool = needsServerSideTools(body);
+  const wantsThinking = needsThinking(body);
+
+  const signals = { ctx, hasReasoningVerb, inToolLoop, needsServerTool, wantsThinking };
+
+  if (wantsThinking)   return { class: "complex", reason: "thinking-enabled", signals };
+  if (needsServerTool) return { class: "complex", reason: "server-side-tool", signals };
+  if (ctx > COMPLEX_CTX) return { class: "complex", reason: "long-context", signals };
+  if (hasReasoningVerb) return { class: "complex", reason: "reasoning-verb", signals };
+  if (ctx <= TRIVIAL_CTX && !inToolLoop) return { class: "trivial", reason: "small-context", signals };
+  return { class: "borderline", reason: "mid-range", signals };
+}
+
+function log(reqId, model, cls, reason, dest, extra) {
+  console.log(
+    `[router] req=${reqId || "?"} model=${model} class=${cls}` +
+    (reason ? ` reason=${reason}` : "") +
+    (extra  ? ` ${extra}`        : "") +
+    ` → ${dest}`
+  );
+}
+
+module.exports = async function router(req /*, config */) {
+  const body = req?.body || {};
+  const model = body.model || "";
+  const reqId = req?.id || req?.headers?.["x-request-id"];
+
+  // Haiku (subagents): local unless Anthropic-only feature needed.
+  if (/haiku/i.test(model)) {
+    if (needsServerSideTools(body) || needsThinking(body)) {
+      log(reqId, model, "haiku-cloud", "server-side-escape", CLOUD_HAIKU);
+      return CLOUD_HAIKU;
+    }
+    const dest = localModelFor(body);
+    log(reqId, model, "haiku", null, dest);
+    return dest;
+  }
+
+  // Sonnet + Opus: classify → decide cloud vs local model.
+  if (/sonnet|opus/i.test(model)) {
+    const decision = classify(body);
+    const local = localModelFor(body);
+    const sig = decision.signals;
+    let dest;
+
+    if (decision.class === "trivial") {
+      dest = local;
+    } else if (decision.class === "complex") {
+      dest = cloudFor(model);
+    } else {
+      dest = DEFAULT_LOCAL ? local : cloudFor(model);
+    }
+
+    log(reqId, model, decision.class, decision.reason, dest,
+      `ctx=${sig.ctx} reasoning=${sig.hasReasoningVerb} toolLoop=${sig.inToolLoop}` +
+      ` serverTool=${sig.needsServerTool || false} thinking=${sig.wantsThinking || false}` +
+      ` localLane=${local.split(",")[1]}`);
+    return dest;
+  }
+
+  return null;
+};

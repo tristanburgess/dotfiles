@@ -1,0 +1,116 @@
+{{- if and .isLinuxBaremetal .installClaude (get . "useCcr" | default true) -}}
+#!/bin/bash
+set -euo pipefail
+
+SECRETS_DIR="${HOME}/.claude-code-router"
+SECRETS="${SECRETS_DIR}/secrets.env"
+
+# Already set up — verify perms and exit.
+if [ -f "$SECRETS" ] && [ -s "$SECRETS" ]; then
+    perms=$(stat -c '%a' "$SECRETS")
+    if [ "$perms" != "600" ]; then
+        chmod 600 "$SECRETS"
+        printf "Hardened %s perms %s → 600.\n" "$SECRETS" "$perms"
+    fi
+    exit 0
+fi
+
+# Non-interactive context (CI, or stdin is a pipe). Check /dev/tty directly
+# since read already uses </dev/tty — stdin TTY state doesn't matter.
+if ! [ -c /dev/tty ] || ! { : </dev/tty; } 2>/dev/null; then
+    cat <<'EOF' >&2
+
+  ⚠  CCR secrets not configured.
+     Re-run this script from an interactive shell to set up the key.
+
+EOF
+    exit 0
+fi
+
+# Interactive setup.
+cat <<'EOF'
+
+  ┌─ claude-code-router setup ────────────────────────────────────
+  │
+  │  CCR needs an Anthropic API key to route cloud-tier requests.
+  │  Use a raw API key, NOT the OAuth token from
+  │  `claude login`
+  |
+  │  1. Open: https://console.anthropic.com/settings/keys
+  │  2. Click "Create Key", name it "claude-code-router"
+  │  3. Copy the value
+  │  4. Paste below (input hidden, no echo)
+  │
+  └────────────────────────────────────────────────────────────────
+
+EOF
+
+key=""
+tmp=""
+cleanup() {
+    if [ -n "${tmp:-}" ] && [ -f "$tmp" ]; then
+        rm -f "$tmp"
+    fi
+    key=""
+    unset key tmp
+}
+trap cleanup EXIT INT TERM
+
+attempts=0
+max_attempts=3
+while [ "$attempts" -lt "$max_attempts" ]; do
+    attempts=$((attempts + 1))
+
+    # -r: no backslash escapes. -s: no echo. -p: prompt on stderr.
+    # IFS= preserves leading/trailing whitespace so we can trim explicitly.
+    IFS= read -rsp "API key: " key </dev/tty
+    printf '\n'
+
+    # Strip surrounding whitespace.
+    key="${key#"${key%%[![:space:]]*}"}"
+    key="${key%"${key##*[![:space:]]}"}"
+
+    if [ -z "$key" ]; then
+        printf "  empty input — try again or Ctrl-C to abort.\n" >&2
+        continue
+    fi
+
+    case "$key" in
+        sk-ant-api03-*)
+            break
+            ;;
+        sk-ant-oat01-*)
+            printf "  ✗ That's an OAuth token. Generate a raw API key at\n    https://console.anthropic.com/settings/keys\n" >&2
+            key=""
+            ;;
+        *)
+            printf "  ✗ Expected sk-ant-api03-... Try again.\n" >&2
+            key=""
+            ;;
+    esac
+done
+
+if [ -z "$key" ]; then
+    printf "Aborting: no valid key after %d attempts.\n" "$max_attempts" >&2
+    exit 1
+fi
+
+# Write atomically. mktemp creates 0600 by default; the umask subshell
+# is belt-and-suspenders if a future version regresses that.
+mkdir -p "$SECRETS_DIR"
+tmp=$(mktemp "${SECRETS}.XXXXXX")
+( umask 077; printf 'ANTHROPIC_API_KEY=%s\n' "$key" > "$tmp" )
+mv "$tmp" "$SECRETS"
+tmp=""
+
+# Verify final perms (paranoia: mv may inherit dest perms on some FSes).
+chmod 600 "$SECRETS"
+
+printf "✓ Wrote %s (0600).\n" "$SECRETS"
+
+# Restart CCR if running so it picks up the new env file.
+if systemctl --user is-active --quiet claude-code-router.service 2>/dev/null; then
+    systemctl --user restart claude-code-router.service
+    printf "✓ Restarted claude-code-router.service\n"
+fi
+{{- end -}}

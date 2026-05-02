@@ -1,0 +1,29 @@
+{{- if and .isLinuxBaremetal .installClaude (get . "useCcr" | default true) -}}
+#!/bin/bash
+set -euo pipefail
+
+# Enable the claude-code-router systemd user service. Re-runs when this
+# script or the unit changes.
+
+UNIT_NAME=claude-code-router.service
+
+# daemon-reload is required when the unit file content changes.
+systemctl --user daemon-reload
+
+if ! systemctl --user is-enabled --quiet "$UNIT_NAME"; then
+    systemctl --user enable "$UNIT_NAME"
+fi
+
+if ! systemctl --user is-active --quiet "$UNIT_NAME"; then
+    systemctl --user start "$UNIT_NAME" || {
+        printf "Failed to start %s — check 'journalctl --user -u %s'.\n" \
+            "$UNIT_NAME" "$UNIT_NAME"
+        exit 1
+    }
+else
+    # If the unit already running, restart so config/router.js changes apply.
+    systemctl --user restart "$UNIT_NAME"
+fi
+
+printf "claude-code-router service active.\n"
+{{- end -}}
