@@ -11,16 +11,21 @@ set -euo pipefail
 #      AMD Radeon 890M iGPU is used (ROCm support for Strix Point is
 #      unreliable; Vulkan is the right path).
 #   3. Enable + start the service.
-#   4. Pull two local models:
-#        - qwen3-coder:30b    (~19 GB MoE 30B/3.3B-active)
+#   4. Pull three local models:
+#        - qwen3-coder:30b      (~19 GB MoE 30B/3.3B-active)
 #          Code lane: RL-tuned for SWE-Bench multi-step agentic workflows.
 #          Routes code files, tool-heavy subagents, default local work.
-#        - gemma3:27b         (~17 GB)
+#        - gemma3:27b           (~17 GB)
 #          Prose lane: Google-trained general model, strong natural language.
 #          Routes .md/.txt files, commit messages, Slack/design-doc tasks.
+#        - qwen3:30b-thinking   (~19 GB MoE 30B/3.3B-active)
+#          Thinking lane: same base MoE arch as qwen3-coder, post-trained
+#          for chain-of-thought reasoning. Routes requests with the
+#          Anthropic `thinking` field set, when ctx ≤ 60K.
 
 CODE_MODEL="qwen3-coder:30b"
 PROSE_MODEL="gemma3:27b"
+THINK_MODEL="qwen3:30b-thinking"
 
 ollama_service_registered() {
     systemctl list-unit-files ollama.service >/dev/null 2>&1
@@ -79,6 +84,8 @@ pull_if_missing() {
 
 pull_if_missing "$CODE_MODEL"
 pull_if_missing "$PROSE_MODEL"
+pull_if_missing "$THINK_MODEL"
 
-printf "Ollama ready. Models: %s, %s. Vulkan backend enabled.\n" "$CODE_MODEL" "$PROSE_MODEL"
+printf "Ollama ready. Models: %s, %s, %s. Vulkan backend enabled.\n" \
+    "$CODE_MODEL" "$PROSE_MODEL" "$THINK_MODEL"
 {{- end -}}
