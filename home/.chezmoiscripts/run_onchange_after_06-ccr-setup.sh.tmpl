@@ -5,7 +5,16 @@ set -euo pipefail
 SECRETS_DIR="${HOME}/.claude-code-router"
 SECRETS="${SECRETS_DIR}/secrets.env"
 
-# Already set up — verify perms and exit.
+# Tighten the directory itself.
+if [ -d "$SECRETS_DIR" ]; then
+    dir_perms=$(stat -c '%a' "$SECRETS_DIR")
+    if [ "$dir_perms" != "700" ]; then
+        chmod 700 "$SECRETS_DIR"
+        printf "Hardened %s dir perms %s → 700.\n" "$SECRETS_DIR" "$dir_perms"
+    fi
+fi
+
+# Already set up — verify file perms and exit.
 if [ -f "$SECRETS" ] && [ -s "$SECRETS" ]; then
     perms=$(stat -c '%a' "$SECRETS")
     if [ "$perms" != "600" ]; then
@@ -97,7 +106,8 @@ fi
 
 # Write atomically. mktemp creates 0600 by default; the umask subshell
 # is belt-and-suspenders if a future version regresses that.
-mkdir -p "$SECRETS_DIR"
+( umask 077; mkdir -p "$SECRETS_DIR" )
+chmod 700 "$SECRETS_DIR"
 tmp=$(mktemp "${SECRETS}.XXXXXX")
 ( umask 077; printf 'ANTHROPIC_API_KEY=%s\n' "$key" > "$tmp" )
 mv "$tmp" "$SECRETS"

@@ -36,7 +36,10 @@ PROTECTED=(
 )
 
 for P in "${PROTECTED[@]}"; do
-  if [ "$BASENAME" = "$P" ]; then
+  # `[[ == $P ]]` performs glob matching so patterns like tsconfig.*.json
+  # cover tsconfig.build.json, tsconfig.test.json, etc.
+  # shellcheck disable=SC2053
+  if [[ "$BASENAME" == $P ]]; then
     echo "Blocked: editing $BASENAME is not allowed. Fix the code to comply with the existing config instead of weakening the config."
     exit 2
   fi

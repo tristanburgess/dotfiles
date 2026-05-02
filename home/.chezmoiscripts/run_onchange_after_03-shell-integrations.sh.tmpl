@@ -6,20 +6,29 @@ set -euo pipefail
 # Linux/WSL only — Windows Git Bash uses run_once_after_00-git-bash-profile.sh.tmpl,
 # which omits mise/zoxide (those are Linux-side via mise).
 
+# Markers default to fixed-string match (-F). Use add_line_re for markers
+# that contain regex metacharacters used intentionally (e.g. `.*`).
 add_line() {
     local marker="$1" line="$2"
-    if ! grep -q "$marker" "$HOME/.bashrc"; then
+    if ! grep -qF -- "$marker" "$HOME/.bashrc"; then
         echo "$line" >> "$HOME/.bashrc"
     fi
 }
 
-add_line 'mise activate bash'   'eval "$(mise activate bash)"'
-add_line 'starship init bash'   'eval "$(starship init bash)"'
-add_line 'zoxide init bash'     'eval "$(zoxide init bash)"'
-add_line 'GOPATH.*bin'          'export PATH="$(go env GOPATH)/bin:$PATH"'
-add_line 'jj util completion'   'source <(jj util completion bash)'
-add_line 'NVM_DIR'              'export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"'
-add_line 'alias k=kubectl'      'alias k=kubectl'
+add_line_re() {
+    local marker="$1" line="$2"
+    if ! grep -qE -- "$marker" "$HOME/.bashrc"; then
+        echo "$line" >> "$HOME/.bashrc"
+    fi
+}
+
+add_line    'mise activate bash'   'eval "$(mise activate bash)"'
+add_line    'starship init bash'   'eval "$(starship init bash)"'
+add_line    'zoxide init bash'     'eval "$(zoxide init bash)"'
+add_line_re 'GOPATH.*bin'          'export PATH="$(go env GOPATH)/bin:$PATH"'
+add_line    'jj util completion'   'source <(jj util completion bash)'
+add_line    'NVM_DIR'              'export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"'
+add_line    'alias k=kubectl'      'alias k=kubectl'
 
 # SSH agent - persist across terminal windows within same login session.
 # First terminal starts the agent; subsequent terminals reuse it.

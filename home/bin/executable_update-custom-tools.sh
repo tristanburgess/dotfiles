@@ -3,8 +3,10 @@
 # Sends desktop notifications on success/failure.
 # Re-patches kitty .desktop files after upgrade (icon path contains version).
 
+set -euo pipefail
+
 # Detect the real user — works under sudo (SUDO_USER), pkexec/Update Manager
-# (PKEXEC_UID), or direct invocation (logname/whoami fallback)
+# (PKEXEC_UID), or direct invocation (logname/whoami fallback).
 if [ -n "${SUDO_USER:-}" ]; then
     NOTIFY_USER="$SUDO_USER"
 elif [ -n "${PKEXEC_UID:-}" ]; then
@@ -14,7 +16,10 @@ else
 fi
 NOTIFY_UID=$(id -u "$NOTIFY_USER" 2>/dev/null || echo 1000)
 DBUS="unix:path=/run/user/${NOTIFY_UID}/bus"
-NOTIFY_HOME=$(eval echo "~$NOTIFY_USER")
+# Resolve home via getent rather than `eval echo "~$NOTIFY_USER"` to avoid
+# shell-eval on a value that originated from environment / passwd lookup.
+NOTIFY_HOME=$(getent passwd "$NOTIFY_USER" | cut -d: -f6)
+[ -n "$NOTIFY_HOME" ] || NOTIFY_HOME="/home/$NOTIFY_USER"
 MISE_BIN="$NOTIFY_HOME/.local/bin/mise"
 
 notify() {
