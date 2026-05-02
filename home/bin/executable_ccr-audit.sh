@@ -129,6 +129,30 @@ printf '%s\n' "$raw" | awk '
     }
 '
 
+# Perf-ctx escalations — requests pushed cloud because local would be too
+# slow. The localPerfCtx field on these lines reports the active ceiling.
+# Tune the chezmoi flag down if escalations are rare (most local traffic
+# already fits), or up if they dominate (local barely gets used).
+printf "\nPerf-ctx escalations (soft cloud push, see chezmoi flag localPerfCtx)\n"
+escalations=$(printf '%s\n' "$raw" | grep -E 'reason=perf-ctx-ceiling' || true)
+if [ -n "$escalations" ]; then
+    printf '%s\n' "$escalations" | awk '
+        match($0, /class=[^ ]+/)        { cls = substr($0, RSTART+6, RLENGTH-6) }
+        match($0, /ctx=[0-9]+/)         { ctx = substr($0, RSTART+4, RLENGTH-4) + 0 }
+        match($0, /localPerfCtx=[0-9]+/){ ceil = substr($0, RSTART+13, RLENGTH-13) + 0 }
+        {
+            n[cls]++; sum[cls] += ctx; if (ctx > max[cls]) max[cls] = ctx
+            ceiling = ceil
+        }
+        END {
+            for (c in n) printf "  %5d  %-18s avg=%6d max=%6d (ceiling=%d)\n",
+                n[c], c, sum[c]/n[c], max[c], ceiling
+        }
+    '
+else
+    printf "  (none — either no traffic above ceiling, or localPerfCtx=-1)\n"
+fi
+
 # Optional: last N prompt snippets when CCR_LOG_PROMPT was on.
 prompts=$(printf '%s\n' "$raw" | grep -oE 'prompt="[^"]*"' | tail -10 || true)
 if [ -n "$prompts" ]; then
