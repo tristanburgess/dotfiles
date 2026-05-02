@@ -28,19 +28,19 @@ A local proxy (`claude-code-router` on `127.0.0.1:3456`) routes each Claude Code
 
 | Tier | Backend | Models | Triggers |
 |------|---------|--------|----------|
-| Local | Ollama (Vulkan, AMD 890M) | `qwen3-coder:30b`, `gemma3:27b`, `qwen3:30b-thinking` | `model: haiku`. Trivial sonnet/opus. Borderline (with `defaultLocal`). Thinking field (when ctx ≤ 60K). Skill local-mode toggle. |
+| Local | Ollama (Vulkan, AMD 890M) | `qwen3-coder:30b`, `gemma3:27b`, `qwen3:30b-thinking` | `model: haiku`. Trivial sonnet/opus. Borderline (with `defaultLocal`). Thinking field (only when `cloudThinking=false` and ctx ≤ 60K). Skill local-mode toggle. |
 | Cloud Sonnet | Anthropic API | `claude-sonnet-4-6` | Main session default. `model: sonnet`. Long context (>60K). Reasoning verbs. `webSearch`. |
-| Cloud Opus | Anthropic API | `claude-opus-4-7` | `model: opus` for non-trivial requests. |
+| Cloud Opus | Anthropic API | `claude-opus-4-7` | `model: opus` for non-trivial requests. Any thinking-field request when `cloudThinking=true` (default). |
 
 Local requests route to one of three lanes based on content signals:
 
 | Local model | Lane | Signals |
 |-------------|------|---------|
-| `qwen3-coder:30b` | code | `.go` `.py` `.ts` etc. file refs; tool-heavy work; default lane |
-| `gemma3:27b` | prose | `.md` `.txt` refs, commit messages, Slack, design docs |
-| `qwen3:30b-thinking` | think | request body has `thinking` field (any non-`disabled` type) and ctx ≤ 60K |
+| `qwen3-coder:30b` | code | `.go` `.py` `.ts` etc. file refs; tool-heavy work; default lane; any request with `tools` (gemma3 lacks tool support) |
+| `gemma3:27b` | prose | `.md` `.txt` refs, commit messages, Slack, design docs — only when request has no `tools` field |
+| `qwen3:30b-thinking` | think | thinking-field requests when `cloudThinking=false` and ctx ≤ 60K |
 
-Long-context thinking (ctx > 60K + `thinking` field set) escapes to **cloud Opus** regardless of incoming tier — big plans get the strongest model.
+**Thinking routing** is gated by the `cloudThinking` chezmoi flag (default `true`). When `true`, every thinking-field request goes to cloud Opus. When `false`, small-ctx thinking goes to the local think lane and only long-ctx thinking escapes to Opus.
 
 Inline override keywords (anywhere in the last user message):
 

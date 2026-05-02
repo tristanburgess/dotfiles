@@ -11,6 +11,13 @@
        Trivial requests always go local; complex always go cloud (except
        thinking + small ctx → local think lane, thinking + long ctx → Opus). */ -}}
 {{- $defaultLocal := promptBoolOnce . "defaultLocal" "Local-first bias for borderline sonnet/opus routing (true = lower spend, false = cloud bias)" true -}}
+{{- /* Where small/medium-context thinking-field requests go:
+       true  (default): all thinking → cloud Opus (quality bias; local 30B
+                        thinking models underperform on real planning tasks)
+       false:           thinking + ctx ≤ 60K → local qwen3:30b-thinking,
+                        thinking + ctx > 60K → cloud Opus
+       Long-context thinking always escapes to cloud Opus regardless. */ -}}
+{{- $cloudThinking := promptBoolOnce . "cloudThinking" "Route all thinking-field requests to cloud Opus (true = quality bias, false = use local think lane for small ctx)" true -}}
 
 {{- /* OS detection: derive isWSL from kernel.osrelease on Linux */ -}}
 {{- $isWSL := false -}}
@@ -34,6 +41,7 @@ sourceDir = {{ .chezmoi.sourceDir | quote }}
     installCodex = {{ has "codex" $aiTools }}
     useCcr = {{ $useCcr }}
     defaultLocal = {{ $defaultLocal }}
+    cloudThinking = {{ $cloudThinking }}
 
 [merge]
     command = "nvim"
