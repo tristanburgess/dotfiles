@@ -1,17 +1,17 @@
 #!/bin/bash
 set -euo pipefail
 
-# ccr-audit — summarize claude-code-router routing decisions from journalctl.
+# claude-code-router-audit — summarize claude-code-router routing decisions from journalctl.
 #
 # Reads [router] log lines from the claude-code-router user service and
 # prints histograms designed for tuning chezmoi flags (localPerfCtx,
 # defaultLocal, cloudThinking).
 #
 # Usage:
-#   ccr-audit              # last 24h
-#   ccr-audit 1h           # last hour
-#   ccr-audit 7d           # last week
-#   ccr-audit --since "2026-05-02 08:00"   # explicit window
+#   claude-code-router-audit              # last 24h
+#   claude-code-router-audit 1h           # last hour
+#   claude-code-router-audit 7d           # last week
+#   claude-code-router-audit --since "2026-05-02 08:00"   # explicit window
 
 since="24 hours ago"
 case "${1:-}" in
@@ -41,7 +41,7 @@ if [ -z "$raw" ]; then
 fi
 
 total=$(printf '%s\n' "$raw" | wc -l)
-printf "ccr-audit — %d requests since %s\n" "$total" "$since"
+printf "claude-code-router-audit — %d requests since %s\n" "$total" "$since"
 printf "%s\n" "════════════════════════════════════════════════════════════════"
 
 # Generic histogram: extract `<field>=<value>` from each line, count and rank.
