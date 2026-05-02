@@ -18,7 +18,7 @@ CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 # should not be blocked — only actual git/jj flags matter.
 FIRST_LINE=$(echo "$CMD" | head -1)
 
-if echo "$FIRST_LINE" | grep -qE '(git|jj)\b.*--no-verify'; then
+if echo "$FIRST_LINE" | grep -qE '(git|jj|gh|pre-commit)\b.*--no-verify'; then
   echo "Blocked: --no-verify bypasses security hooks. Fix the underlying issue instead."
   exit 2
 fi

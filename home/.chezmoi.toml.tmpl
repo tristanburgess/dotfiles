@@ -142,7 +142,7 @@ sourceDir = {{ .chezmoi.sourceDir | quote }}
 {{- if eq .chezmoi.os "windows" }}
 
 # Run .sh scripts via Git Bash on Windows (body-wrapped chezmoiscripts
-# and modify_settings.json.sh.tmpl).
+# and modify_settings.json.tmpl).
 [interpreters.sh]
     command = 'C:/Program Files/Git/bin/bash.exe'
 {{- end }}

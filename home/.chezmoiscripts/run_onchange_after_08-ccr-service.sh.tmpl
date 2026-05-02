@@ -25,6 +25,40 @@ else
     systemctl --user restart "$UNIT_NAME"
 fi
 
+# Health probe: confirm the service is actually serving on the port. Avoids
+# making a real /v1/messages call (which would round-trip through Ollama
+# and add 10s+ to chezmoi apply). For a missing/unreadable secrets.env,
+# fall back to a check that the env file itself parses.
+printf "Probing claude-code-router..."
+PROBE_RC=0
+for i in $(seq 1 20); do
+    # `-w %{http_code}` always prints; -m 1 caps each attempt. Any HTTP code
+    # (including 404) means the proxy is alive on the port.
+    code=$(curl -s -o /dev/null -w "%{http_code}" -m 1 "http://127.0.0.1:3456/" 2>/dev/null || true)
+    if [ -n "$code" ] && [ "$code" != "000" ]; then
+        printf " up (HTTP %s).\n" "$code"
+        break
+    fi
+    sleep 0.5
+    printf "."
+    if [ "$i" = "20" ]; then PROBE_RC=1; fi
+done
+
+if [ "$PROBE_RC" != "0" ]; then
+    printf "\nclaude-code-router did not respond on 127.0.0.1:3456 within ~10s.\n" >&2
+    printf "  systemctl --user status %s\n" "$UNIT_NAME" >&2
+    printf "  journalctl --user -u %s -n 30\n" "$UNIT_NAME" >&2
+    exit 1
+fi
+
+# Sanity-check: secrets.env exists and contains a non-empty API key. Catches
+# the silent-failure mode where the file was lost or never written.
+SECRETS_FILE="$HOME/.claude-code-router/secrets.env"
+if [ ! -s "$SECRETS_FILE" ] || ! grep -q '^ANTHROPIC_API_KEY=.\+' "$SECRETS_FILE" 2>/dev/null; then
+    printf "Warning: %s missing or empty — cloud requests will 401.\n" "$SECRETS_FILE" >&2
+    printf "  Re-run: chezmoi apply (interactive shell) to re-prompt for the key.\n" >&2
+fi
+
 printf "claude-code-router service active.\n"
 {{- else if and .isLinuxBaremetal .installClaude -}}
 #!/bin/bash

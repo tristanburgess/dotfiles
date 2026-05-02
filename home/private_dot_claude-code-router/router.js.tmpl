@@ -47,7 +47,11 @@ const CLOUD_HAIKU  = "anthropic,{{ .cloud.haiku }}";
 const REASONING_KEYWORDS    = /\b(explain|why|analyze|architect|design|review|compare|evaluate|investigate|debug|root\s*cause|plan)\b/i;
 const SERVER_SIDE_TOOL_TYPES = /^(web_search|computer|code_execution|bash_|text_editor)/;
 const PROSE_FILE_EXT        = /\b\w+\.(md|txt|markdown|rst)\b/i;
-const PROSE_TASK_KEYWORDS   = /\b(commit\s+message|changelog|slack\s+message|design\s+doc|SKILL\.md|skill\s+file|prose|readme|announcement|blog\s+post|email|write\s+(a|the|up|this|an))\b/i;
+// `write a function/test/script` was triggering this on code work, so the
+// `write` clause is anchored to explicit prose targets. Up to two connecting
+// words (e.g. "write up a summary", "write me an email") between `write`
+// and the target are allowed.
+const PROSE_TASK_KEYWORDS   = /\b(commit\s+message|changelog|slack\s+message|design\s+doc|SKILL\.md|skill\s+file|prose|readme|announcement|blog\s+post|email|write(\s+\w+){1,3}\s+(blog|post|article|email|note|response|reply|message|README|comment|paragraph|summary|description))\b/i;
 const CODE_FILE_EXT         = /\b\w+\.(go|py|ts|tsx|js|jsx|rs|sh|bash|zsh|c|cpp|java|rb|swift|kt|cs|tf|jsonnet|yaml|json|toml)\b/i;
 
 // Ctx thresholds — see home/.chezmoi.toml.tmpl [data.routing] for tuning.
@@ -101,7 +105,10 @@ function lastUserMessage(body) {
     if (m.role !== "user") continue;
     if (typeof m.content === "string") return m.content;
     if (Array.isArray(m.content)) {
-      return m.content.map(c => (typeof c === "string" ? c : c.text || "")).join(" ");
+      return m.content.map(c => {
+        if (typeof c === "string") return c;
+        return (c && typeof c.text === "string") ? c.text : "";
+      }).join(" ");
     }
   }
   return "";

@@ -93,14 +93,26 @@ MANAGED='
       "Write({{ $home }}/.ssh/**)",
       "Write({{ $home }}/.aws/**)",
       "Write(**/.env*)",
-      "Bash(curl*|*bash*)",
+      "Bash(bash *)",
+      "Bash(sh *)",
       "Bash(ssh *)",
       "Bash(nc *)",
       "Bash(scp *)",
       "Bash(rm -rf /)",
-      "Bash(chmod 777*)",
-      "Bash(*--force*push*)",
-      "Bash(*--no-verify*)"
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~)",
+      "Bash(rm -rf ~/*)",
+      "Bash(chmod 777 *)",
+      "Bash(chmod -R 777 *)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(jj git push --force*)",
+      "Bash(git commit*--no-verify*)",
+      "Bash(git rebase*--no-verify*)",
+      "Bash(git merge*--no-verify*)",
+      "Bash(jj*--no-verify*)",
+      "Bash(gh*--no-verify*)",
+      "Bash(pre-commit*--no-verify*)"
     ]
   },
   "model": "sonnet[1m]",
@@ -225,7 +237,11 @@ MANAGED=$(echo "$MANAGED" | jq --arg sl "$STATUSLINE_CMD" '.statusLine.command =
 
 CURRENT=$(cat)
 
-if [ -z "$CURRENT" ] || [ "$CURRENT" = "{}" ]; then
+# Empty / whitespace-only / `{}` (with any whitespace) → emit managed shape.
+# `jq -e 'length == 0'` returns true for an empty object regardless of
+# formatting; `2>/dev/null` covers the empty-string case where jq would
+# otherwise error.
+if [ -z "$CURRENT" ] || jq -e 'length == 0' >/dev/null 2>&1 <<< "$CURRENT"; then
   echo "$MANAGED" | jq .
   exit 0
 fi

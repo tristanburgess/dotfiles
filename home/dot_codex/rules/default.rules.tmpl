@@ -1,5 +1,5 @@
 # Codex prefix_rules — mirrors Claude Code permissions allow/deny lists.
-# Paired with: home/dot_claude/modify_settings.json.sh.tmpl
+# Paired with: home/dot_claude/modify_settings.json.tmpl
 # Run home/dot_agents/check-permissions.sh to verify they stay in sync.
 
 # ── Allow: single-token patterns match any subsequent args ─────────────────
@@ -11,6 +11,7 @@ prefix_rule(pattern = ["eslint"],  decision = "allow")
 prefix_rule(pattern = ["find"],    decision = "allow")
 prefix_rule(pattern = ["gh"],      decision = "allow")
 prefix_rule(pattern = ["go"],      decision = "allow")
+prefix_rule(pattern = ["golangci-lint"], decision = "allow")
 prefix_rule(pattern = ["grep"],    decision = "allow")
 prefix_rule(pattern = ["jj"],      decision = "allow")
 prefix_rule(pattern = ["ls"],      decision = "allow")

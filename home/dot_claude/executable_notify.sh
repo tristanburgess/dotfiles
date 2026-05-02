@@ -12,7 +12,7 @@
 # WSL2: notify-send relays to Windows toast via WSLg.
 # Windows (Git Bash): BurntToast PowerShell module if installed.
 
-set -u
+set -uo pipefail
 
 ICON="$HOME/.claude/claude-logo.png"
 # Allow filesystem socket (preferred) or abstract (legacy). Reject tcp:.

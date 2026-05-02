@@ -10,26 +10,26 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SETTINGS="${REPO_ROOT}/home/dot_claude/modify_settings.json.sh.tmpl"
+SETTINGS="${REPO_ROOT}/home/dot_claude/modify_settings.json.tmpl"
 RULES="${REPO_ROOT}/home/dot_codex/rules/default.rules.tmpl"
 
 # Extract allowed command prefixes from Claude settings.json allow list.
-# Parses the MANAGED JSON block, reads "allow" array, extracts first token of Bash(...) entries.
+# Renders the chezmoi template to resolve Go directives, then extracts the
+# MANAGED JSON block, reads "allow", and emits the first token of each
+# Bash(...) entry.
 claude_allow() {
-  python3 - "$SETTINGS" <<'PYEOF'
-import sys, re, json
-
-text = open(sys.argv[1]).read()
-# Extract the JSON literal between MANAGED=' and the closing '
-m = re.search(r"MANAGED='\s*(\{.*?\})\s*'", text, re.DOTALL)
+  chezmoi execute-template < "$SETTINGS" | python3 -c '
+import re, json, sys
+text = sys.stdin.read()
+m = re.search(r"MANAGED=\x27\s*(\{.*?\})\s*\x27", text, re.DOTALL)
 if not m:
-    sys.exit("Could not find MANAGED JSON block")
-data = json.loads(m.group(1).replace("{{ $home }}", "/home/x"))
+    sys.exit("Could not find MANAGED JSON block in rendered template")
+data = json.loads(m.group(1))
 for entry in data.get("permissions", {}).get("allow", []):
-    bm = re.match(r'Bash\(([^)*\s]+)', entry)
+    bm = re.match(r"Bash\(([^)*\s]+)", entry)
     if bm:
         print(bm.group(1))
-PYEOF
+'
 }
 
 # Extract allowed command prefixes from Codex prefix_rules.
@@ -57,7 +57,7 @@ if [[ -n "$DIFF" ]]; then
   echo "$DIFF" >&2
   echo "" >&2
   echo "Update home/dot_codex/rules/default.rules.tmpl to match" >&2
-  echo "home/dot_claude/modify_settings.json.sh.tmpl (or vice versa)." >&2
+  echo "home/dot_claude/modify_settings.json.tmpl (or vice versa)." >&2
   exit 1
 fi
 
