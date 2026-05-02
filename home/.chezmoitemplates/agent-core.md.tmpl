@@ -53,16 +53,9 @@ Inline override keywords (anywhere in the last user message):
 | `@cloudprose` | cloud `claude-sonnet-4-6` | force cloud Sonnet for prose |
 | `@cloudthink` | cloud `claude-opus-4-7` | force cloud Opus reasoning (big plans, hard analysis) |
 
-**Subagent routing is automatic.** The `Plan` subagent always sets the `thinking` field, so the router sends it to cloud Opus when `cloudThinking=true` (default) or to the local think lane when `cloudThinking=false` and ctx ≤ 60K. The model name passed at invocation is ignored for thinking-classified requests, so leave it unset. Other subagents (Explore, cavecrew-*, prose-review) inherit `haiku` and route local automatically — also leave them unset.
+**Subagent routing is automatic — leave the model name unset.** Plan sets `thinking`, so the router picks cloud Opus (default) or local think (`cloudThinking=false` + ctx ≤ 60K) regardless of model. Explore, cavecrew-*, and prose-review inherit `haiku` and route local.
 
-**During Opus thinking sessions, delegate grunt work to subagents.** Every turn the main session takes during a `/plan` or thinking-enabled run is an Opus call. To keep the cloud bill lean, prefer dispatching read-heavy or repetitive work to subagents whose haiku tier routes local:
-
-- `Agent(subagent_type="Explore")` for file reads, greps, "where is X defined" lookups
-- `Agent(subagent_type="cavecrew-investigator")` for code-locator tables (returns caveman-compressed)
-- `Agent(subagent_type="cavecrew-builder")` for surgical 1-2 file edits
-- `Agent(subagent_type="cavecrew-reviewer")` for diff/branch reviews
-
-The main Opus session synthesises the subagent results. The subagent calls themselves classify as `haiku` and land on `qwen3-coder:30b` locally. Direct tool calls (`Read`, `Bash`, `Grep`, `Edit`) stay inside the main conversation chain and consume Opus tokens, so reach for the Agent tool when the task is bounded enough to delegate.
+**In Opus thinking sessions, delegate to subagents.** Direct `Read` / `Bash` / `Grep` / `Edit` calls stay on the main Opus chain and burn Opus tokens. Subagents spawn fresh haiku chains that land on local `qwen3-coder:30b`. Reach for `Agent(Explore)` for file reads and greps, `Agent(cavecrew-investigator)` for code-locator tables, `Agent(cavecrew-builder)` for 1-2 file edits, `Agent(cavecrew-reviewer)` for diff reviews.
 
 **Skill local-mode toggle** (for Notion-heavy maintenance work via `/health`, `/guitar-tutor` etc.):
 
