@@ -4,11 +4,12 @@
 {{- /* Tiered model routing via claude-code-router + Ollama (local) +
        Anthropic API (cloud). Set false to run Claude Code straight to
        Anthropic with no proxy. */ -}}
-{{- $useCcr := promptBoolOnce . "useCcr" "Enable tiered routing: local qwen3-coder:30b + cloud Sonnet/Opus via CCR" true -}}
+{{- $useCcr := promptBoolOnce . "useCcr" "Enable tiered routing: local Ollama (qwen3-coder:30b code, gemma3:27b prose, qwen3:30b-thinking) + cloud Sonnet/Opus via CCR" true -}}
 {{- /* Bias for sonnet/opus borderline-classified requests:
-       true  (default): borderline → local qwen3-coder:30b (cost bias)
+       true  (default): borderline → local lane (cost bias)
        false:           borderline → cloud (quality bias)
-       Trivial requests always go local; complex always go cloud, regardless. */ -}}
+       Trivial requests always go local; complex always go cloud (except
+       thinking + small ctx → local think lane, thinking + long ctx → Opus). */ -}}
 {{- $defaultLocal := promptBoolOnce . "defaultLocal" "Local-first bias for borderline sonnet/opus routing (true = lower spend, false = cloud bias)" true -}}
 
 {{- /* OS detection: derive isWSL from kernel.osrelease on Linux */ -}}
