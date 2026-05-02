@@ -9,19 +9,24 @@ set -euo pipefail
 #   1. Install Ollama (if missing or service unit not registered).
 #   2. Drop a systemd override that turns on the Vulkan backend so the
 #      AMD Radeon 890M iGPU is used (ROCm support for Strix Point is
-#      unreliable; Vulkan is the right path).
+#      unreliable; Vulkan is the right path) and aligns OLLAMA_NUM_CTX
+#      with CCR's localPerfCtx so locally-routed requests don't get
+#      silently truncated.
 #   3. Enable + start the service.
-#   4. Pull three local models:
-#        - qwen3-coder:30b      (~19 GB MoE 30B/3.3B-active)
-#          Code lane: RL-tuned for SWE-Bench multi-step agentic workflows.
-#          Routes code files, tool-heavy subagents, default local work.
-#        - gemma3:27b           (~17 GB)
-#          Prose lane: Google-trained general model, strong natural language.
-#          Routes .md/.txt files, commit messages, Slack/design-doc tasks.
-#        - qwen3:30b-thinking   (~19 GB MoE 30B/3.3B-active)
-#          Thinking lane: same base MoE arch as qwen3-coder, post-trained
-#          for chain-of-thought reasoning. Routes requests with the
-#          Anthropic `thinking` field set, when ctx ≤ 60K.
+#   4. Pull the three lane models for the active localProfile:
+#        - $CODE_MODEL  (code lane): tool-heavy subagents, code files,
+#          default local work.
+#        - $PROSE_MODEL (prose lane): .md/.txt files, commit messages,
+#          Slack/design-doc tasks.
+#        - $THINK_MODEL (think lane): requests with the Anthropic
+#          `thinking` field set when ctx ≤ 60K. May equal $CODE_MODEL
+#          when the active profile collapses code+think onto a single
+#          model with /think mode (balanced and smart profiles do this).
+#   5. After pulls, prompt to remove tags this script deployed on the
+#      previous run that aren't in the new active profile. Tracked via
+#      a state file so user-pulled experimental tags are never touched.
+#
+# See home/.chezmoi.toml.tmpl for profile definitions.
 
 CODE_MODEL="{{ .ollama.code }}"
 PROSE_MODEL="{{ .ollama.prose }}"
@@ -38,11 +43,19 @@ if ! command -v ollama >/dev/null 2>&1 || ! ollama_service_registered; then
     curl -fsSL https://ollama.com/install.sh | sh
 fi
 
-# Vulkan backend systemd drop-in. Idempotent: only writes when contents change.
+# Vulkan backend + context-window systemd drop-in. Idempotent: only writes
+# when contents change.
+#
+# OLLAMA_NUM_CTX matches CCR's localPerfCtx (router-side threshold above
+# which requests escape to cloud). Keeping them in sync means anything CCR
+# routes local actually fits in the model's context — Ollama's default
+# 4096 silently truncates the rest, throwing away most of long Claude Code
+# system prompts. Falls back to 20000 when localPerfCtx is -1 (disabled).
 OVERRIDE_DIR="/etc/systemd/system/ollama.service.d"
 OVERRIDE_FILE="$OVERRIDE_DIR/vulkan.conf"
 DESIRED_OVERRIDE='[Service]
 Environment="OLLAMA_VULKAN=1"
+Environment="OLLAMA_NUM_CTX={{ if gt .routing.localPerfCtx 0 }}{{ .routing.localPerfCtx }}{{ else }}20000{{ end }}"
 '
 
 if ! sudo test -f "$OVERRIDE_FILE" || \
@@ -86,8 +99,69 @@ pull_if_missing "$CODE_MODEL"
 pull_if_missing "$PROSE_MODEL"
 pull_if_missing "$THINK_MODEL"
 
-printf "Ollama ready. Models: %s, %s, %s. Vulkan backend enabled.\n" \
-    "$CODE_MODEL" "$PROSE_MODEL" "$THINK_MODEL"
+# Stale-tag cleanup. State file tracks the (deduped) set of tags this
+# script deployed on the previous run. On profile switch:
+#   stale = previous_run_tags − current_active_tags
+# User-pulled experimental tags are never in the state file, so they're
+# never eligible for removal. On first run after this feature ships the
+# state file is absent — nothing is removed (legacy pre-2026 tags
+# survive, user can `ollama rm` them manually).
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
+STATE_FILE="$STATE_DIR/ollama-managed-tags"
+mkdir -p "$STATE_DIR"
+
+# shellcheck disable=SC2207
+ACTIVE_TAGS=($(printf '%s\n' "$CODE_MODEL" "$PROSE_MODEL" "$THINK_MODEL" | sort -u))
+
+PREV_TAGS=()
+if [[ -f "$STATE_FILE" ]]; then
+    mapfile -t PREV_TAGS <"$STATE_FILE"
+fi
+
+in_array() {
+    local needle="$1"; shift
+    local x
+    for x in "$@"; do [[ "$x" == "$needle" ]] && return 0; done
+    return 1
+}
+
+STALE=()
+for tag in "${PREV_TAGS[@]}"; do
+    [[ -z "$tag" ]] && continue
+    if ! in_array "$tag" "${ACTIVE_TAGS[@]}"; then
+        STALE+=("$tag")
+    fi
+done
+
+if [[ ${#STALE[@]} -gt 0 ]]; then
+    printf "\nProfile change detected. Tags from previous run no longer in active '%s' profile:\n" "{{ .localProfile }}"
+    for t in "${STALE[@]}"; do printf "  - %s\n" "$t"; done
+
+    if [[ -c /dev/tty ]] && { : </dev/tty; } 2>/dev/null; then
+        read -rp "Remove these stale tags? [y/N] " ans </dev/tty
+        case "$ans" in
+            [yY]|[yY][eE][sS])
+                for t in "${STALE[@]}"; do
+                    if ollama rm "$t" 2>/dev/null; then
+                        printf "Removed %s\n" "$t"
+                    fi
+                done
+                ;;
+            *)
+                printf "Skipped. Run manually: ollama rm %s\n" "${STALE[*]}"
+                ;;
+        esac
+    else
+        printf "Non-interactive shell — to free space manually:\n"
+        printf "  ollama rm %s\n" "${STALE[*]}"
+    fi
+fi
+
+# Record the active set for the next run's diff.
+printf '%s\n' "${ACTIVE_TAGS[@]}" >"$STATE_FILE"
+
+printf "\nOllama ready. Active profile: %s. Models: %s, %s, %s. Vulkan backend enabled.\n" \
+    "{{ .localProfile }}" "$CODE_MODEL" "$PROSE_MODEL" "$THINK_MODEL"
 {{- else if and .isLinuxBaremetal .installClaude -}}
 #!/bin/bash
 set -euo pipefail

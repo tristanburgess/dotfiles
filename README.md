@@ -44,11 +44,22 @@ OS gating is automatic. Each script checks `.chezmoi.os` and derived flags (`isW
 
 ### Linux bare metal / WSL2
 
+Default — clones source to `~/.local/share/chezmoi`:
+
 ```bash
 sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin init --apply tristanburgess/dotfiles
 ```
 
-Installs chezmoi, prompts for name + email, then runs the full bootstrap: apt repos/packages, mise + all pinned tools, JetBrainsMono Nerd Font, shell integrations (mise, zoxide, starship, jj completions), Neovim plugins.
+Or, to clone the source to a path you'd rather edit from (no system git needed — chezmoi bundles go-git for the clone):
+
+```bash
+sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin
+~/.local/bin/chezmoi init --source ~/dev/code/dotfiles --apply tristanburgess/dotfiles
+```
+
+Either path runs the full bootstrap: apt repos/packages, mise + all pinned tools, JetBrainsMono Nerd Font, shell integrations (mise, zoxide, starship, jj completions), Neovim plugins.
+
+If you went with the default and later want to move the clone to a friendlier path, see [Relocating an existing source dir](#relocating-an-existing-source-dir).
 
 **Bare-metal extras:** pcspkr disable, Kitty `.desktop` patching, Claude Desktop `.deb`, Cinnamon DND shortcut, snap packages (Slack/Spotify/Notion/Foliate), Discord/Zoom `.deb`s.
 
@@ -80,10 +91,16 @@ chezmoi needs Git Bash to run `.sh` modify scripts and body-wrapped chezmoiscrip
 
 #### Step 2: Apply
 
-Open **Git Bash**:
+Open **Git Bash**. Default location:
 
 ```bash
 chezmoi init --apply tristanburgess/dotfiles
+```
+
+Or with a custom source path:
+
+```bash
+chezmoi init --source ~/dev/code/dotfiles --apply tristanburgess/dotfiles
 ```
 
 Installs mise + winget packages, sets up Git Bash shell integrations (mise, zoxide, starship, jj/gh completions), JetBrainsMono Nerd Font, bootstraps WSL2 + Ubuntu if absent (may require reboot).
@@ -94,8 +111,11 @@ After reboot (if prompted):
 
 ```powershell
 wsl -d Ubuntu
-# set username/password on first launch, then:
+# set username/password on first launch, then bootstrap (default location):
 sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin init --apply tristanburgess/dotfiles
+# or with a custom source path:
+sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin
+~/.local/bin/chezmoi init --source ~/dev/code/dotfiles --apply tristanburgess/dotfiles
 ```
 
 Then follow the WSL2 note above to pin Kitty to taskbar.
@@ -121,13 +141,7 @@ gh auth login
 claude  # authenticate Claude Code
 ```
 
-If you have a local dev clone at `~/dev/code/dotfiles`, switch chezmoi to use it as the source so you don't have to maintain two clones in sync:
-
-```bash
-chezmoi init --source ~/dev/code/dotfiles/home
-```
-
-After that, `jj git fetch && jj new main && chezmoi apply` is the full update cycle.
+The full update cycle is `jj git fetch && jj new main && chezmoi apply` (run from wherever the source clone lives — `~/.local/share/chezmoi` by default, or wherever you relocated it).
 
 For [signed commits](https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification#ssh-commit-signature-verification):
 
@@ -140,15 +154,31 @@ chezmoi apply  # re-apply to pick up signing config in jj
 ### Testing a branch
 
 ```bash
-git clone https://github.com/tristanburgess/dotfiles.git ~/dev/code/dotfiles
-cd ~/dev/code/dotfiles && git checkout some-branch-name
-sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin   # skip if chezmoi on PATH
-~/.local/bin/chezmoi init --source ~/dev/code/dotfiles/home
-~/.local/bin/chezmoi diff     # preview
-~/.local/bin/chezmoi apply    # apply when ready
+chezmoi cd                              # cd into the source clone
+git checkout some-branch-name           # or jj equivalent
+chezmoi diff                            # preview
+chezmoi apply                           # apply when ready
 ```
 
-On Windows: `chezmoi init --source 'C:/Users/<you>/dev/code/dotfiles/home'` from Git Bash.
+`chezmoi cd` resolves to wherever the source actually lives — the default `~/.local/share/chezmoi` or wherever you relocated it.
+
+### Relocating an existing source dir
+
+For new installs the install commands above already accept `--source` to clone the source state directly to your preferred path — that's the chezmoi-canonical way and skips this section.
+
+This is for the case where you bootstrapped with the default `~/.local/share/chezmoi` and want to move the clone to a friendlier path *after* the fact. Chezmoi has no built-in command for this, so the dotfiles ship a small wrapper:
+
+```bash
+~/bin/chezmoi-relocate ~/dev/code/dotfiles    # or wherever you keep code
+```
+
+What it does:
+- Moves `~/.local/share/chezmoi` to your target.
+- Symlinks the default path back to the target so existing chezmoi commands keep resolving without a config change.
+- Refuses to overwrite a non-empty target.
+- Idempotent — re-running with the same target is a no-op.
+
+Cross-platform bash (Linux, macOS, WSL2, Git Bash on Windows). If you'd rather configure `sourceDir` directly in `~/.config/chezmoi/chezmoi.toml` instead of symlinking, that also works — see [chezmoi's customize-source-directory docs](https://www.chezmoi.io/user-guide/advanced/customize-your-source-directory/).
 
 ### Updating configs
 
