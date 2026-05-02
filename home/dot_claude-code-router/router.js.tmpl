@@ -15,13 +15,19 @@
 //             tools) → cloud haiku
 //   sonnet/opus → classified per request:
 //     complex     → cloud (model tier preserved)
-//     thinking    → LOCAL_THINK (small-ctx) or CLOUD_OPUS (long-ctx, big plans)
+//     thinking    → CLOUD_OPUS when CLOUD_THINKING flag set (default),
+//                   else LOCAL_THINK (small-ctx) or CLOUD_OPUS (long-ctx)
 //     trivial     → LOCAL (model picked by think/prose/code heuristic)
 //     borderline  → DEFAULT_LOCAL ? LOCAL : cloud
 //
-//   Thinking field: LOCAL_THINK when ctx ≤ COMPLEX_CTX, else CLOUD_OPUS
-//   (long-context reasoning escapes to Opus for big planning tasks,
-//    regardless of the incoming model tier).
+//   Thinking field: CLOUD_OPUS by default (CLOUD_THINKING=true) since local
+//   30B thinking models underperform on real planning tasks. With
+//   CLOUD_THINKING=false, small-ctx thinking goes to LOCAL_THINK and only
+//   long-ctx escapes to Opus.
+//
+// Tool-capability guard: gemma3:27b does not support the Anthropic `tools`
+// field. When a request has tools, the prose-lane resolution is replaced
+// with the code lane (qwen3-coder:30b supports tools).
 //
 // Manual override keywords (anywhere in the last user message):
 //   Local lanes:
@@ -44,6 +50,7 @@
 //   journalctl --user -u claude-code-router -g '\[router\]' -n 50
 
 const DEFAULT_LOCAL = {{ get . "defaultLocal" | default true }};
+const CLOUD_THINKING = {{ get . "cloudThinking" | default true }};
 
 const LOCAL_CODE  = "ollama,qwen3-coder:30b";      // code, tool-heavy, default
 const LOCAL_PROSE = "ollama,gemma3:27b";           // markdown, writing, Notion
@@ -134,6 +141,13 @@ function needsServerSideTools(body) {
   return false;
 }
 
+// Any tool definitions in body (client-side or server-side). gemma3:27b
+// rejects the request entirely with "does not support tools" when this is
+// non-empty, so the prose lane must be skipped.
+function hasTools(body) {
+  return Array.isArray(body && body.tools) && body.tools.length > 0;
+}
+
 function needsThinking(body) {
   const t = body && body.thinking;
   if (!t || t.type === "disabled") return false;
@@ -159,12 +173,16 @@ function manualOverride(body) {
 // `thinking` field is present and ctx is within local-friendly bounds.
 function localModelFor(body) {
   const msg = lastUserMessage(body);
+  // gemma3:27b rejects requests with tools. Force code lane in that case.
+  const proseAllowed = !hasTools(body);
 
   // Code file extension in message → code lane.
   if (CODE_FILE_EXT.test(msg)) return LOCAL_CODE;
 
-  // Prose signals → prose lane.
-  if (PROSE_FILE_EXT.test(msg) || PROSE_TASK_KEYWORDS.test(msg)) return LOCAL_PROSE;
+  // Prose signals → prose lane (only if no tools in request).
+  if (proseAllowed && (PROSE_FILE_EXT.test(msg) || PROSE_TASK_KEYWORDS.test(msg))) {
+    return LOCAL_PROSE;
+  }
 
   // Scan recent tool_use names for file extensions as a tiebreaker.
   if (Array.isArray(body && body.messages)) {
@@ -176,7 +194,7 @@ function localModelFor(body) {
         if (c && c.type === "tool_use" && c.input) {
           const path = JSON.stringify(c.input);
           if (CODE_FILE_EXT.test(path)) return LOCAL_CODE;
-          if (PROSE_FILE_EXT.test(path)) return LOCAL_PROSE;
+          if (proseAllowed && PROSE_FILE_EXT.test(path)) return LOCAL_PROSE;
         }
       }
     }
@@ -233,6 +251,10 @@ module.exports = async function router(req /*, config */) {
       return CLOUD_HAIKU;
     }
     if (needsThinking(body)) {
+      if (CLOUD_THINKING) {
+        log(reqId, model, "haiku-cloud", "thinking-cloud-default", CLOUD_OPUS);
+        return CLOUD_OPUS;
+      }
       const ctx = estimateTokens(body);
       if (ctx > COMPLEX_CTX) {
         log(reqId, model, "haiku-cloud", "thinking-long-context", CLOUD_OPUS);
@@ -256,8 +278,7 @@ module.exports = async function router(req /*, config */) {
     if (decision.class === "trivial") {
       dest = local;
     } else if (decision.class === "thinking") {
-      // Thinking + manageable ctx → local think lane.
-      dest = LOCAL_THINK;
+      dest = CLOUD_THINKING ? CLOUD_OPUS : LOCAL_THINK;
     } else if (decision.class === "complex") {
       // Long-ctx + thinking is a "big plan" — escape to Opus regardless of
       // incoming tier. Other complex reasons preserve the requested tier.
@@ -269,6 +290,7 @@ module.exports = async function router(req /*, config */) {
     log(reqId, model, decision.class, decision.reason, dest,
       `ctx=${sig.ctx} reasoning=${sig.hasReasoningVerb} toolLoop=${sig.inToolLoop}` +
       ` serverTool=${sig.needsServerTool || false} thinking=${sig.wantsThinking || false}` +
+      ` tools=${hasTools(body)} cloudThinking=${CLOUD_THINKING}` +
       ` localLane=${local.split(",")[1]}`);
     return dest;
   }
