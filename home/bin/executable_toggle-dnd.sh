@@ -1,22 +1,106 @@
 #!/bin/bash
 set -euo pipefail
 
-# Toggle Do Not Disturb on Cinnamon (gsettings) or KDE Plasma 6 (notification
-# inhibit via DBus). Bind this script to a global keyboard shortcut:
+# Toggle Do Not Disturb across Cinnamon, KDE Plasma 6, Windows Git Bash, and
+# WSL. Always touches/removes ~/.claude-dnd so notify.sh suppresses the
+# Claude-Code toast pipeline regardless of the system DND state. Linux DEs
+# additionally suppress system-wide notifications via native APIs; Windows
+# additionally flips the registry ToastEnabled key (Action Center master
+# toggle).
+#
+# Bind to a global shortcut:
 #   - Cinnamon: handled by run_once_after_07-dnd-shortcut.sh.tmpl
 #   - KDE Plasma 6: configure manually under System Settings → Custom Shortcuts
 #     (Plasma's native "toggle do not disturb" action has bug 436415: shortcut
 #      stops working after closing System Settings)
+#   - Windows + WSL: AutoHotkey script registered by the winget bootstrap.
 
+DND_FLAG="$HOME/.claude-dnd"
 KDE_DND_PID_FILE="/tmp/kde-dnd-pid"
 
+set_flag()   { touch "$DND_FLAG"; }
+clear_flag() { rm -f "$DND_FLAG"; }
+
+UNAME=$(uname -s)
+IS_WSL=0
+[ "$UNAME" = Linux ] && grep -qiE 'microsoft|wsl' /proc/sys/kernel/osrelease 2>/dev/null && IS_WSL=1
+
+# ── Windows Git Bash ─────────────────────────────────────────────────────
+# Claude-only DND: toggle the file flag (notify.sh checks it). System-wide
+# Win11 DND stays out of scope -- use Win+N native focus for that.
+case "$UNAME" in
+    MINGW*|MSYS*|CYGWIN*)
+        if [ -f "$DND_FLAG" ]; then
+            clear_flag
+            STATE="OFF"
+        else
+            set_flag
+            STATE="ON"
+        fi
+        # OSD via BurntToast (PowerShell-branded; AUMID branding blocked on
+        # Win11 22H2+ for unpackaged callers).
+        powershell.exe -NoProfile -Command "
+            if (Get-Module -ListAvailable -Name BurntToast) {
+                Import-Module BurntToast
+                \$logo = Join-Path \$env:USERPROFILE '.claude\claude-logo.png'
+                if (Test-Path \$logo) {
+                    New-BurntToastNotification -Text 'Do Not Disturb', 'Do Not Disturb: $STATE' -AppLogo \$logo -Silent
+                } else {
+                    New-BurntToastNotification -Text 'Do Not Disturb', 'Do Not Disturb: $STATE' -Silent
+                }
+            }" 2>/dev/null || true
+        # Mirror flag into WSL so WSL Claude panes see same DND state.
+        if command -v wsl.exe >/dev/null 2>&1; then
+            if [ "$STATE" = "ON" ]; then
+                wsl.exe -e bash -c 'touch "$HOME/.claude-dnd"' 2>/dev/null || true
+            else
+                wsl.exe -e bash -c 'rm -f "$HOME/.claude-dnd"' 2>/dev/null || true
+            fi
+        fi
+        exit 0
+        ;;
+esac
+
+# ── WSL ──────────────────────────────────────────────────────────────────
+if [ "$IS_WSL" = 1 ]; then
+    if [ -f "$DND_FLAG" ]; then
+        clear_flag
+        STATE="OFF"
+    else
+        set_flag
+        STATE="ON"
+    fi
+    # Mirror flag to Windows side so a Git Bash Claude pane sees same state.
+    if command -v powershell.exe >/dev/null 2>&1; then
+        powershell.exe -NoProfile -Command "
+            if (Get-Module -ListAvailable -Name BurntToast) {
+                Import-Module BurntToast
+                \$logo = Join-Path \$env:USERPROFILE '.claude\claude-logo.png'
+                if (Test-Path \$logo) {
+                    New-BurntToastNotification -Text 'Do Not Disturb', 'Do Not Disturb: $STATE' -AppLogo \$logo -Silent
+                } else {
+                    New-BurntToastNotification -Text 'Do Not Disturb', 'Do Not Disturb: $STATE' -Silent
+                }
+            }
+            \$flag = Join-Path \$env:USERPROFILE '.claude-dnd'
+            if ('$STATE' -eq 'ON') { New-Item -ItemType File -Force \$flag | Out-Null } else { Remove-Item -Force \$flag -ErrorAction SilentlyContinue }
+        " 2>/dev/null || true
+    fi
+    # WSLg notify-send for an in-WSL OSD (best effort).
+    notify-send --urgency=low --app-name="Do Not Disturb" "Do Not Disturb: $STATE" 2>/dev/null || true
+    exit 0
+fi
+
+# ── Linux bare-metal: KDE / Cinnamon ─────────────────────────────────────
 if [[ "${XDG_CURRENT_DESKTOP:-}" == *"KDE"* ]]; then
     if [[ -f "$KDE_DND_PID_FILE" ]] && kill -0 "$(cat "$KDE_DND_PID_FILE")" 2>/dev/null; then
         kill "$(cat "$KDE_DND_PID_FILE")"
         rm -f "$KDE_DND_PID_FILE"
+        clear_flag
         STATE="OFF"
     else
         rm -f "$KDE_DND_PID_FILE"
+        set_flag
         # Background Python holds the DBus Inhibit cookie open until killed.
         # Inhibit is tied to the caller's DBus connection lifetime; a one-shot
         # script would release immediately on exit.
@@ -43,9 +127,11 @@ elif [[ "${XDG_CURRENT_DESKTOP:-}" == *"Cinnamon"* ]]; then
     current=$(gsettings get org.cinnamon.desktop.notifications display-notifications)
     if [ "$current" = "true" ]; then
         gsettings set org.cinnamon.desktop.notifications display-notifications false
+        set_flag
         STATE="ON"
     else
         gsettings set org.cinnamon.desktop.notifications display-notifications true
+        clear_flag
         STATE="OFF"
     fi
 

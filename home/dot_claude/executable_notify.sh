@@ -14,6 +14,9 @@
 
 set -uo pipefail
 
+# DND flag honored across Linux/WSL/Windows. toggle-dnd.sh creates/removes it.
+[ -f "$HOME/.claude-dnd" ] && exit 0
+
 ICON="$HOME/.claude/claude-logo.png"
 # Allow filesystem socket (preferred) or abstract (legacy). Reject tcp:.
 KITTY_LISTEN_RE='^unix:(/[^[:space:]]+|@kitty-[0-9]+)$'
@@ -199,11 +202,22 @@ notify_windows() {
     if ! command -v powershell.exe >/dev/null 2>&1; then
         return 0
     fi
+    # BurntToast emits under PowerShell branding. Win11 26000+ rejects custom
+    # AUMIDs from unpackaged Win32 callers (CreateToastNotifier returns
+    # DisabledForUser even with Start Menu .lnk + HKCU AUMID reg). Reg + lnk
+    # stay in the winget bootstrap so a future MSIX/CLSID activator can plug
+    # in; for now header label is "PowerShell" but body shows "Claude Code"
+    # text + logo via -AppLogo.
     printf '%s' "$RAW" | powershell.exe -NoProfile -Command '
         $body = [Console]::In.ReadToEnd()
         if (Get-Module -ListAvailable -Name BurntToast) {
             Import-Module BurntToast
-            New-BurntToastNotification -Text "Claude Code", $body
+            $logo = Join-Path $env:USERPROFILE ".claude\claude-logo.png"
+            if (Test-Path $logo) {
+                New-BurntToastNotification -Text "Claude Code", $body -AppLogo $logo
+            } else {
+                New-BurntToastNotification -Text "Claude Code", $body
+            }
         }
     ' >/dev/null 2>&1 &
     disown

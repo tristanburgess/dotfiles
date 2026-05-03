@@ -12,17 +12,19 @@ sudo apt install -y \
     software-properties-common apt-transport-https \
     keychain \
     python3 python3-pip python3-venv fontconfig unzip \
-    htop httpie mysql-client socat vim xclip
+    htop httpie mysql-client socat vim xclip \
+    libnotify-bin
 
 {{ if .isLinuxBaremetal }}
 # Desktop/X11 utilities — bare-metal Linux only.
 # (WSL skips: wmctrl/xprintidle target X11 windows on the local desktop;
-# libnotify-bin uses libnotify (Windows host has its own toast system);
 # zram-tools tunes the kernel, but WSL kernel is Microsoft-managed.)
+# libnotify-bin lives in the shared base above: notify.sh (Claude Code
+# notifications) calls notify-send on every Linux target, including WSL
+# where libnotify routes through WSLg into the Windows toast system.
 sudo apt install -y \
     wmctrl \
     xprintidle \
-    libnotify-bin \
     zram-tools
 {{ end }}
 
