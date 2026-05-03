@@ -42,6 +42,11 @@
        Anthropic API (cloud). Set false to run Claude Code straight to
        Anthropic with no proxy. */ -}}
 {{- $useCcr := promptBoolOnce . "useCcr" (printf "Enable tiered routing: local Ollama (%s code, %s prose, %s) + cloud Sonnet/Opus via CCR" $ollamaCode $ollamaProse $ollamaThink) true -}}
+{{- /* Expose the Windows-host Ollama on LAN (TCP 11434, Private profile,
+       LocalSubnet only). Use case: a second laptop on the same network
+       points at this box's LAN IP for Ollama. Untrusted networks remain
+       blocked because Windows tags those adapters Public. */ -}}
+{{- $enableOllamaLan := promptBoolOnce . "enableOllamaLan" "Expose Ollama on LAN (TCP 11434, Private profile, LocalSubnet only)" false -}}
 {{- /* Bias for sonnet/opus borderline-classified requests:
        true  (default): borderline → local lane (cost bias)
        false:           borderline → cloud (quality bias)
@@ -114,6 +119,7 @@ sourceDir = {{ .chezmoi.sourceDir | quote }}
     installClaude = {{ has "claude" $aiTools }}
     installCodex = {{ has "codex" $aiTools }}
     useCcr = {{ $useCcr }}
+    enableOllamaLan = {{ $enableOllamaLan }}
     defaultLocal = {{ $defaultLocal }}
     cloudThinking = {{ $cloudThinking }}
     logPrompt = {{ $logPrompt }}
@@ -141,8 +147,14 @@ sourceDir = {{ .chezmoi.sourceDir | quote }}
 
 {{- if eq .chezmoi.os "windows" }}
 
-# Run .sh scripts via Git Bash on Windows (body-wrapped chezmoiscripts
-# and modify_settings.json.tmpl).
+# Run .sh scripts via Git Bash on Windows (body-wrapped chezmoiscripts).
 [interpreters.sh]
+    command = 'C:/Program Files/Git/bin/bash.exe'
+
+# modify_settings.json.tmpl is a bash script with .json script extension
+# (since the destination is ~/.claude/settings.json). Without this mapping,
+# chezmoi tries to fork/exec it directly and Windows rejects with
+# "%1 is not a valid Win32 application".
+[interpreters.json]
     command = 'C:/Program Files/Git/bin/bash.exe'
 {{- end }}

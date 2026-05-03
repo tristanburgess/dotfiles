@@ -1,0 +1,123 @@
+// CCR custom transformer: capture cloud 429 / 5xx and write a sidecar state
+// file so the router (router.js) can force-route the affected model family
+// to the local Ollama lane until the rate-limit window passes.
+//
+// Wired in via config.json:
+//   transformers: [{ path: "<homeDir>/.claude-code-router/cloudfallback.transformer.js" }]
+//   Providers[].transformer.use: ["Anthropic", "cloudfallback"]
+//
+// State file: ~/.claude-code-router/cloud-status.json
+//   { sonnet: { until: <epoch_ms> }, opus: {...}, haiku: {...} }
+//
+// TTL strategy:
+//   - 429 with Retry-After header: until = now + Retry-After + 5s slack
+//   - 429 without Retry-After:     until = now + 60min  (5h-quota class default)
+//   - 5xx (provider outage):       exponential backoff per family —
+//                                  60s → 5m → 25m → 60m cap, resets on 2xx
+//
+// Anthropic doesn't expose 5h vs weekly window boundaries in headers; we
+// trust Retry-After when it's present and use a conservative default when
+// it isn't. The router reads the file each request (cheap, <100 bytes).
+
+const fs   = require("fs");
+const path = require("path");
+
+const STATUS_FILE = path.join(
+  process.env.HOME || process.env.USERPROFILE || "",
+  ".claude-code-router", "cloud-status.json"
+);
+
+const FAMILIES = ["sonnet", "opus", "haiku"];
+const DEFAULT_429_TTL_S = 60 * 60;   // header-less 429 fallback
+const BACKOFF_INIT_S    = 60;
+const BACKOFF_MULT      = 5;
+const BACKOFF_CAP_S     = 60 * 60;
+
+// Per-family backoff state (in-process). Persisting it to disk would let
+// CCR-restart-during-outage continue the chain, but the cost of a single
+// reset on restart is small (one extra failed request to learn the state).
+const backoff = { sonnet: BACKOFF_INIT_S, opus: BACKOFF_INIT_S, haiku: BACKOFF_INIT_S };
+
+function familyFromModel(m) {
+  if (!m) return null;
+  if (/opus/i.test(m))   return "opus";
+  if (/haiku/i.test(m))  return "haiku";
+  if (/sonnet/i.test(m)) return "sonnet";
+  return null;
+}
+
+function readStatus() {
+  try { return JSON.parse(fs.readFileSync(STATUS_FILE, "utf8")) || {}; }
+  catch (_) { return {}; }
+}
+
+function writeStatus(obj) {
+  try {
+    fs.mkdirSync(path.dirname(STATUS_FILE), { recursive: true });
+    const tmp = STATUS_FILE + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(obj));
+    fs.renameSync(tmp, STATUS_FILE);
+  } catch (e) {
+    console.error(`[cloudfallback] write failed: ${e.message}`);
+  }
+}
+
+function setDown(family, ttlSeconds, reason) {
+  const status = readStatus();
+  status[family] = { until: Date.now() + ttlSeconds * 1000, reason };
+  writeStatus(status);
+  console.log(`[cloudfallback] family=${family} down ttl=${ttlSeconds}s reason=${reason}`);
+}
+
+function clearDown(family) {
+  const status = readStatus();
+  if (status[family]) {
+    delete status[family];
+    writeStatus(status);
+  }
+}
+
+class CloudFallbackTransformer {
+  constructor(options) {
+    this.options = options || {};
+    this.name = "cloudfallback";
+  }
+
+  // Pre-flight: stash the requested model on the request so we can recover
+  // it in transformResponseIn (where we only see the upstream Response).
+  async transformRequestIn(request /*, provider, ctx */) {
+    if (request && request.model) {
+      this._lastModel = request.model;
+    }
+    return request;
+  }
+
+  // Inspect upstream Response. Anthropic returns Retry-After (seconds) on
+  // 429. Pass the response through unchanged either way.
+  async transformResponseIn(response /*, ctx */) {
+    const family = familyFromModel(this._lastModel);
+    if (!family) return response;
+
+    const status = response.status;
+    if (status === 429) {
+      const ra = parseInt(response.headers.get("retry-after") || "0", 10);
+      const ttl = (ra > 0 ? ra : DEFAULT_429_TTL_S) + 5;
+      setDown(family, ttl, ra > 0 ? `429-retry-after=${ra}` : "429-no-header");
+      backoff[family] = BACKOFF_INIT_S;
+    } else if (status >= 500 && status < 600) {
+      const ttl = backoff[family];
+      setDown(family, ttl, `${status}-backoff`);
+      backoff[family] = Math.min(backoff[family] * BACKOFF_MULT, BACKOFF_CAP_S);
+    } else if (status >= 200 && status < 300) {
+      // Healthy response — clear any prior down marker and reset backoff.
+      const cur = readStatus();
+      if (cur[family]) clearDown(family);
+      backoff[family] = BACKOFF_INIT_S;
+    }
+    return response;
+  }
+}
+
+CloudFallbackTransformer.TransformerName = "cloudfallback";
+
+module.exports = CloudFallbackTransformer;

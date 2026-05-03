@@ -5,6 +5,12 @@
 // chezmoi data — see home/.chezmoi.toml.tmpl for the source of truth and
 // tuning notes.
 //
+// Cloud-fallback gate: if the cloud-status sidecar (written by the
+// cloudfallback transformer on 429/5xx) marks a model family as down, the
+// router force-routes that family's requests to the matching local lane
+// until the recorded `until` timestamp expires. State file lives at
+// ~/.claude-code-router/cloud-status.json and survives reboots.
+//
 // Decision flow per request:
 //   1. @keyword override anywhere in last user message wins all
 //      (@code/@prose/@think/@cloudcode/@cloudprose/@cloudthink)
@@ -25,8 +31,32 @@
 //   extras   k=v pairs (ctx, verb, subagent, laneSignal, ...) — only
 //            present when meaningful (false bools omitted)
 
+const fs   = require("fs");
+const path = require("path");
+
 const DEFAULT_LOCAL  = {{ get . "defaultLocal" | default true }};
 const CLOUD_THINKING = {{ get . "cloudThinking" | default true }};
+
+const STATUS_FILE = path.join(
+  process.env.HOME || process.env.USERPROFILE || "",
+  ".claude-code-router", "cloud-status.json"
+);
+
+// Returns 0 when cloud is healthy, or epoch-ms when the family is grounded
+// (i.e. router should force-route to local until that timestamp). Stale-on-
+// disk: each call reads the file fresh; the transformer only writes (no IPC
+// needed). File access errors / parse failures fail open (treat as healthy).
+function cloudDownUntil(family) {
+  try {
+    const raw = fs.readFileSync(STATUS_FILE, "utf8");
+    const obj = JSON.parse(raw);
+    const rec = obj && obj[family];
+    if (rec && typeof rec.until === "number" && rec.until > Date.now()) {
+      return rec.until;
+    }
+  } catch (_) {}
+  return 0;
+}
 
 // Audit logging: off by default. Set CCR_LOG_PROMPT=1 in the systemd unit's
 // Environment (toggle via chezmoi flag logPrompt) to include a truncated
@@ -259,11 +289,30 @@ module.exports = async function router(req /*, config */) {
   const reqId = req?.id || req?.headers?.["x-request-id"];
   const cls   = tierOf(model);
 
-  // 1. Manual @keyword override.
+  // 1. Manual @keyword override (wins over cloud-fallback so the user can
+  //    still force a route during a 429 window if they need to).
   const override = manualOverride(body);
   if (override) {
     log({ reqId, model, cls: "override", reason: override.key, dest: override.dest, body });
     return override.dest;
+  }
+
+  // 1.5. Cloud-fallback gate. If the cloudfallback transformer recorded a
+  //      429/5xx for this model family, force-route to the matching local
+  //      lane until the recorded `until` timestamp expires. Tracked per
+  //      family so a sonnet rate-limit doesn't ground haiku and vice versa.
+  const downUntil = cloudDownUntil(cls);
+  if (downUntil > 0) {
+    const lane = (cls === "haiku" || cls === "sonnet")
+      ? localLaneFor(body)
+      : { dest: LOCAL_THINK, signal: "opus-fallback-think" };
+    log({ reqId, model, cls, reason: "cloud-fallback", dest: lane.dest, body,
+      extras: {
+        ctx: estimateTokens(body),
+        fallbackUntil: new Date(downUntil).toISOString(),
+        laneSignal: lane.signal,
+      } });
+    return lane.dest;
   }
 
   // 2. Haiku (subagents).

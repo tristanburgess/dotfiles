@@ -5,6 +5,11 @@
   "PORT": 3456,
   "API_TIMEOUT_MS": 600000,
   "CUSTOM_ROUTER_PATH": "{{ .chezmoi.homeDir }}/.claude-code-router/router.js",
+  "transformers": [
+    {
+      "path": "{{ .chezmoi.homeDir }}/.claude-code-router/cloudfallback.transformer.js"
+    }
+  ],
   "Providers": [
     {
       "name": "anthropic",
@@ -23,7 +28,7 @@
         "haiku"
       ],
       "transformer": {
-        "use": ["Anthropic"]
+        "use": ["Anthropic", "cloudfallback"]
       }
     },
     {

@@ -1,6 +1,6 @@
 {{- if eq .chezmoi.os "windows" -}}
 # Windows-only winget installer.
-# chezmoi runs .ps1 natively on Windows via PowerShell — no [interpreters] needed.
+# chezmoi runs .ps1 natively on Windows via PowerShell -- no [interpreters] needed.
 # Body-wrapped so this file is a no-op on Linux/macOS.
 $ErrorActionPreference = 'Continue'  # tolerate individual package failures
 
@@ -15,13 +15,13 @@ $bootstrap = @(
 # Cloud CLIs live in WSL only (mise-managed). Windows host stays thin.
 $cloudCLIs = @()
 
-# Local LLM runtime — Windows host owns the GPU and the model store.
+# Local LLM runtime -- Windows host owns the GPU and the model store.
 # WSL clients hit http://localhost:11434 via mirrored networking.
 $llmRuntime = @(
     'Ollama.Ollama'
 )
 
-# Desktop apps — Windows-native equivalents of Linux snap/deb packages
+# Desktop apps -- Windows-native equivalents of Linux snap/deb packages
 $desktopApps = @(
     'Anthropic.Claude',                 # Claude Desktop (replaces .deb on Linux)
     'Microsoft.VisualStudioCode',       # VS Code on host; drives WSL via Remote-WSL extension
@@ -34,18 +34,18 @@ $desktopApps = @(
 )
 # PDF tooling
 $pdfTools = @(
-    'QPDF.QPDF',                        # qpdf — PDF splitter/repair/linearize
-    'tesseract-ocr.tesseract'           # tesseract — OCR engine (ocrmypdf runs via uvx)
+    'QPDF.QPDF',                        # qpdf -- PDF splitter/repair/linearize
+    'tesseract-ocr.tesseract'           # tesseract -- OCR engine (ocrmypdf runs via uvx)
 )
 
-# Dev tools — cross-platform equivalents of Linux-side installs
+# Dev tools -- cross-platform equivalents of Linux-side installs
 $devTools = @(
-    'CoreyButler.NVMforWindows'         # nvm-windows — mirrors nvm on Linux
+    'CoreyButler.NVMforWindows'         # nvm-windows -- mirrors nvm on Linux
 )
 
-# Image processing — consolidated to Windows host (removed from Linux apt).
+# Image processing -- consolidated to Windows host (removed from Linux apt).
 $imageTools = @(
-    'ImageMagick.ImageMagick'           # imagemagick — convert/identify/montage/etc.
+    'ImageMagick.ImageMagick'           # imagemagick -- convert/identify/montage/etc.
 )
 
 # Map winget IDs to process names for apps that block installs while running
@@ -60,7 +60,7 @@ $processNames = @{
 }
 
 # Packages that can't be upgraded while chezmoi apply is running.
-# Git.Git: Git Bash is the shell running chezmoi — upgrading kills the session.
+# Git.Git: Git Bash is the shell running chezmoi -- upgrading kills the session.
 # twpayne.chezmoi: chezmoi.exe is locked by the running process.
 $skipUpgrade = @('Git.Git', 'twpayne.chezmoi')
 $deferredUpgrades = @()
@@ -133,15 +133,49 @@ if ($deferredUpgrades.Count -gt 0) {
     }
 }
 
+{{ if get . "enableOllamaLan" | default false }}
+# ── Ollama LAN exposure ──────────────────────────────────────────────────
+# Bind Ollama to all interfaces, allow inbound on Private profile from the
+# local subnet only. Untrusted networks (Public profile) stay blocked.
+$ollamaEnv = @{
+    OLLAMA_HOST    = '0.0.0.0:11434'
+    OLLAMA_ORIGINS = '*'
+}
+$envChanged = $false
+foreach ($kv in $ollamaEnv.GetEnumerator()) {
+    $cur = [Environment]::GetEnvironmentVariable($kv.Key, 'Machine')
+    if ($cur -ne $kv.Value) {
+        [Environment]::SetEnvironmentVariable($kv.Key, $kv.Value, 'Machine')
+        Write-Host "Set machine env $($kv.Key)=$($kv.Value)"
+        $envChanged = $true
+    }
+}
+
+if (-not (Get-NetFirewallRule -Name 'Ollama-LAN' -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -Name 'Ollama-LAN' -DisplayName 'Ollama LAN (TCP 11434)' `
+        -Direction Inbound -Action Allow -Protocol TCP -LocalPort 11434 `
+        -Profile Private -RemoteAddress LocalSubnet | Out-Null
+    Write-Host "Created firewall rule Ollama-LAN (Private, LocalSubnet)"
+}
+
+if ($envChanged) {
+    $svc = Get-Service Ollama -ErrorAction SilentlyContinue
+    if ($svc -and $svc.Status -eq 'Running') {
+        Write-Host "Restarting Ollama service to pick up new bind address"
+        Restart-Service Ollama
+    }
+}
+{{ end }}
+
 # ── VS Code extensions ───────────────────────────────────────────────────
 # Host-side extensions only (UI scope). Workspace-scope extensions for code
 # living in WSL (Go, Rust on Linux) are installed inside WSL by
 # run_onchange_after_07-vscode-extensions.sh.tmpl. Rust pack here is for
-# energybeam — the native Windows Rust project on the host.
+# energybeam -- the native Windows Rust project on the host.
 $codeExtensions = @(
     'ms-vscode-remote.remote-wsl',
     'rust-lang.rust-analyzer',          # official LSP
-    'vadimcn.vscode-lldb',              # CodeLLDB — debugger for native Rust
+    'vadimcn.vscode-lldb',              # CodeLLDB -- debugger for native Rust
     'tamasfe.even-better-toml',         # Cargo.toml syntax + schema
     'fill-labs.dependi',                # Cargo deps inspector
     'ms-python.python',                 # Python LSP (pulls Pylance + debugpy)
@@ -173,6 +207,6 @@ if ($codeCmd) {
         }
     }
 } else {
-    Write-Host "VS Code CLI not found yet — extensions will install on the next chezmoi apply."
+    Write-Host "VS Code CLI not found yet -- extensions will install on the next chezmoi apply."
 }
 {{- end -}}
