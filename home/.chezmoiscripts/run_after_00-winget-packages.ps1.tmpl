@@ -133,6 +133,40 @@ if ($deferredUpgrades.Count -gt 0) {
     }
 }
 
+{{ if get . "enableOllamaLan" | default false }}
+# ── Ollama LAN exposure ──────────────────────────────────────────────────
+# Bind Ollama to all interfaces, allow inbound on Private profile from the
+# local subnet only. Untrusted networks (Public profile) stay blocked.
+$ollamaEnv = @{
+    OLLAMA_HOST    = '0.0.0.0:11434'
+    OLLAMA_ORIGINS = '*'
+}
+$envChanged = $false
+foreach ($kv in $ollamaEnv.GetEnumerator()) {
+    $cur = [Environment]::GetEnvironmentVariable($kv.Key, 'Machine')
+    if ($cur -ne $kv.Value) {
+        [Environment]::SetEnvironmentVariable($kv.Key, $kv.Value, 'Machine')
+        Write-Host "Set machine env $($kv.Key)=$($kv.Value)"
+        $envChanged = $true
+    }
+}
+
+if (-not (Get-NetFirewallRule -Name 'Ollama-LAN' -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -Name 'Ollama-LAN' -DisplayName 'Ollama LAN (TCP 11434)' `
+        -Direction Inbound -Action Allow -Protocol TCP -LocalPort 11434 `
+        -Profile Private -RemoteAddress LocalSubnet | Out-Null
+    Write-Host "Created firewall rule Ollama-LAN (Private, LocalSubnet)"
+}
+
+if ($envChanged) {
+    $svc = Get-Service Ollama -ErrorAction SilentlyContinue
+    if ($svc -and $svc.Status -eq 'Running') {
+        Write-Host "Restarting Ollama service to pick up new bind address"
+        Restart-Service Ollama
+    }
+}
+{{ end }}
+
 # ── VS Code extensions ───────────────────────────────────────────────────
 # Host-side extensions only (UI scope). Workspace-scope extensions for code
 # living in WSL (Go, Rust on Linux) are installed inside WSL by

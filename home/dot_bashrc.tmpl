@@ -17,6 +17,14 @@ fi
 PATH="${PATH//C://c}"
 PATH="${PATH//D://d}"
 
+# ── Land at $HOME on launch ───────────────────────────────────────────────
+# Git Bash inherits CWD from the spawning process; Windows Terminal default
+# is system32. Starship's repo scan trips scan_timeout on huge protected
+# dirs and fills the prompt with a lock + system Rust version line.
+case "$PWD" in
+    /c/Windows/*|/c/Program*|/c/ProgramData/*) cd "$HOME" ;;
+esac
+
 # ── mise shims (not `mise activate`) ──────────────────────────────────────
 # `mise activate bash` mangles PATH on Windows Git Bash: the native Windows
 # mise.exe emits PATH in Windows format (`C:\...;...`), MSYS2 re-converts on
