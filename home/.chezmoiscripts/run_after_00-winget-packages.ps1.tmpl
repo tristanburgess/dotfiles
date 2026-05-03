@@ -12,16 +12,19 @@ $bootstrap = @(
     'jdx.mise'                          # mise tool manager
 )
 
-# Cloud CLIs — installed via winget on both platforms for consistency
-$cloudCLIs = @(
-    'Amazon.AWSCLI',
-    'Microsoft.AzureCLI',
-    'Google.CloudSDK'
+# Cloud CLIs live in WSL only (mise-managed). Windows host stays thin.
+$cloudCLIs = @()
+
+# Local LLM runtime — Windows host owns the GPU and the model store.
+# WSL clients hit http://localhost:11434 via mirrored networking.
+$llmRuntime = @(
+    'Ollama.Ollama'
 )
 
 # Desktop apps — Windows-native equivalents of Linux snap/deb packages
 $desktopApps = @(
     'Anthropic.Claude',                 # Claude Desktop (replaces .deb on Linux)
+    'Microsoft.VisualStudioCode',       # VS Code on host; drives WSL via Remote-WSL extension
     'SlackTechnologies.Slack',
     'Spotify.Spotify',
     'Notion.Notion',
@@ -40,14 +43,20 @@ $devTools = @(
     'CoreyButler.NVMforWindows'         # nvm-windows — mirrors nvm on Linux
 )
 
+# Image processing — consolidated to Windows host (removed from Linux apt).
+$imageTools = @(
+    'ImageMagick.ImageMagick'           # imagemagick — convert/identify/montage/etc.
+)
+
 # Map winget IDs to process names for apps that block installs while running
 $processNames = @{
-    'Spotify.Spotify'         = @('Spotify', 'SpotifyLauncher')
-    'SlackTechnologies.Slack' = 'slack'
-    'Discord.Discord'         = 'Discord'
-    'Zoom.Zoom'               = 'Zoom'
-    'Notion.Notion'           = 'Notion'
-    'Anthropic.Claude'        = 'Claude'
+    'Spotify.Spotify'              = @('Spotify', 'SpotifyLauncher')
+    'SlackTechnologies.Slack'      = 'slack'
+    'Discord.Discord'              = 'Discord'
+    'Zoom.Zoom'                    = 'Zoom'
+    'Notion.Notion'                = 'Notion'
+    'Anthropic.Claude'             = 'Claude'
+    'Microsoft.VisualStudioCode'   = 'Code'
 }
 
 # Packages that can't be upgraded while chezmoi apply is running.
@@ -71,7 +80,7 @@ function Close-AppIfRunning($pkg) {
     return $false
 }
 
-$packages = $bootstrap + $cloudCLIs + $desktopApps + $pdfTools + $devTools
+$packages = $bootstrap + $cloudCLIs + $llmRuntime + $desktopApps + $pdfTools + $devTools + $imageTools
 
 foreach ($pkg in $packages) {
     $installed = winget list --id $pkg --exact 2>$null | Select-String $pkg
@@ -122,5 +131,48 @@ if ($deferredUpgrades.Count -gt 0) {
     foreach ($pkg in $deferredUpgrades) {
         Write-Host "  winget upgrade --exact --id $pkg"
     }
+}
+
+# ── VS Code extensions ───────────────────────────────────────────────────
+# Host-side extensions only (UI scope). Workspace-scope extensions for code
+# living in WSL (Go, Rust on Linux) are installed inside WSL by
+# run_onchange_after_07-vscode-extensions.sh.tmpl. Rust pack here is for
+# energybeam — the native Windows Rust project on the host.
+$codeExtensions = @(
+    'ms-vscode-remote.remote-wsl',
+    'rust-lang.rust-analyzer',          # official LSP
+    'vadimcn.vscode-lldb',              # CodeLLDB — debugger for native Rust
+    'tamasfe.even-better-toml',         # Cargo.toml syntax + schema
+    'fill-labs.dependi',                # Cargo deps inspector
+    'ms-python.python',                 # Python LSP (pulls Pylance + debugpy)
+    'charliermarsh.ruff'                # Ruff linter/formatter
+)
+
+$codeCmd = $null
+$codeOnPath = Get-Command code -ErrorAction SilentlyContinue
+if ($codeOnPath) {
+    $codeCmd = $codeOnPath.Source
+} else {
+    $candidates = @(
+        "$env:LOCALAPPDATA\Programs\Microsoft VS Code\bin\code.cmd",
+        "$env:ProgramFiles\Microsoft VS Code\bin\code.cmd"
+    )
+    foreach ($c in $candidates) {
+        if (Test-Path $c) { $codeCmd = $c; break }
+    }
+}
+
+if ($codeCmd) {
+    $installed = & $codeCmd --list-extensions 2>$null
+    foreach ($ext in $codeExtensions) {
+        if ($installed -contains $ext) {
+            Write-Host "VS Code extension $ext already installed"
+        } else {
+            Write-Host "Installing VS Code extension: $ext"
+            & $codeCmd --install-extension $ext --force | Out-Null
+        }
+    }
+} else {
+    Write-Host "VS Code CLI not found yet — extensions will install on the next chezmoi apply."
 }
 {{- end -}}

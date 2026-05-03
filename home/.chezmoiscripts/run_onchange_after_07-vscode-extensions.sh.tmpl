@@ -1,0 +1,42 @@
+{{- if eq .chezmoi.os "linux" -}}
+#!/bin/bash
+set -euo pipefail
+
+# VS Code extensions for the Linux side (bare-metal Linux + WSL via vscode-server).
+# Workspace-scope extensions must live where the code lives — these aren't
+# inherited from the Windows host install over Remote-WSL.
+#
+# On bare-metal: `code` comes from the apt install.
+# On WSL: `code` only appears on PATH after the first Remote-WSL connection
+# bootstraps vscode-server. If absent, this script no-ops with a hint.
+
+extensions=(
+    rust-lang.rust-analyzer    # official LSP
+    vadimcn.vscode-lldb        # CodeLLDB — debugger for native Rust
+    tamasfe.even-better-toml   # Cargo.toml syntax + schema
+    fill-labs.dependi          # Cargo deps inspector
+    golang.go                  # Go LSP, debug, test, lint
+    ms-python.python           # Python LSP (pulls Pylance + debugpy)
+    charliermarsh.ruff         # Ruff linter/formatter
+)
+
+if ! command -v code &>/dev/null; then
+    if grep -qiE '(microsoft|wsl)' /proc/sys/kernel/osrelease 2>/dev/null; then
+        printf "code CLI not on PATH yet. Open VS Code on Windows → 'WSL: Connect to WSL' once,\n"
+        printf "then re-run \`chezmoi apply\` inside WSL to install workspace extensions.\n"
+    else
+        printf "code CLI not found — VS Code extension install skipped.\n"
+    fi
+    exit 0
+fi
+
+installed="$(code --list-extensions 2>/dev/null || true)"
+for ext in "${extensions[@]}"; do
+    if printf '%s\n' "$installed" | grep -qix "$ext"; then
+        printf "VS Code extension %s already installed\n" "$ext"
+    else
+        printf "Installing VS Code extension: %s\n" "$ext"
+        code --install-extension "$ext" --force >/dev/null
+    fi
+done
+{{- end -}}

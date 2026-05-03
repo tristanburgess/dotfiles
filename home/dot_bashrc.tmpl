@@ -31,6 +31,9 @@ fi
 
 # ── Environment ───────────────────────────────────────────────────────────
 export CLAUDE_HOME="$HOME/.claude"
+# Local LLM endpoint — Ollama server runs on the Windows host; clients here
+# (Claude Code, scripts) point at the same loopback address.
+export OLLAMA_HOST="http://localhost:11434"
 
 # ── Completions ───────────────────────────────────────────────────────────
 eval "$(gh completion -s bash)"

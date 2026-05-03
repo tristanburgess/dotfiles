@@ -1,0 +1,12 @@
+{{- if eq .chezmoi.os "windows" -}}
+# Managed by chezmoi — edit home/dot_wslconfig.tmpl, then `chezmoi apply`.
+# After apply, run `wsl --shutdown` once for changes to take effect.
+[wsl2]
+# Mirrored networking lets WSL `localhost` reach Windows host services
+# directly (e.g., Ollama on :11434). Requires WSL 2.0+ and Windows 11 22H2+.
+networkingMode=mirrored
+firewall=true
+
+[experimental]
+hostAddressLoopback=true
+{{- end -}}

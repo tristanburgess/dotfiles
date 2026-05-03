@@ -5,35 +5,57 @@ set -euo pipefail
 # All user-installed apt packages — re-runs when this list changes
 sudo apt update -qq
 
-# Base system tools
+# Base system tools — pure CLI, install on all Linux including WSL.
+# (ImageMagick lives on the Windows host now; image processing consolidates there.)
 sudo apt install -y \
     curl wget git build-essential pkg-config libssl-dev \
     software-properties-common apt-transport-https \
-    wmctrl xprintidle keychain libnotify-bin \
+    keychain \
     python3 python3-pip python3-venv fontconfig unzip \
-    htop httpie imagemagick mysql-client socat vim xclip zram-tools
+    htop httpie mysql-client socat vim xclip
+
+{{ if .isLinuxBaremetal }}
+# Desktop/X11 utilities — bare-metal Linux only.
+# (WSL skips: wmctrl/xprintidle target X11 windows on the local desktop;
+# libnotify-bin uses libnotify (Windows host has its own toast system);
+# zram-tools tunes the kernel, but WSL kernel is Microsoft-managed.)
+sudo apt install -y \
+    wmctrl \
+    xprintidle \
+    libnotify-bin \
+    zram-tools
+{{ end }}
 
 # Docker
 sudo apt install -y \
     docker-ce docker-ce-cli containerd.io \
     docker-buildx-plugin docker-compose-plugin
 
-# Desktop apps and daemons (from custom repos)
+{{ if .isLinuxBaremetal }}
+# Desktop apps and daemons (from custom repos) — bare-metal Linux only.
+# (WSL skips: GUI apps + cloud-sync daemons live on the host. VS Code on
+# WSL is unnecessary because Remote-WSL drives the host install.)
 sudo apt install -y \
     code \
     google-chrome-stable \
     keepassxc \
     onedrive
+{{ end }}
 
-# Media
+{{ if .isLinuxBaremetal }}
+# Media — bare-metal Linux only.
+# (WSL skips: book/video work happens on the Windows host where Calibre lives.)
 sudo apt install -y \
     calibre \
     openshot-qt
 
-# PDF tooling
+# PDF tooling — bare-metal Linux only.
+# (WSL skips: PDF prep for the guitar-tutor pipeline runs on Windows where
+# qpdf, tesseract, and ghostscript are installed via winget.)
 sudo apt install -y \
     ghostscript \
     qpdf \
     ocrmypdf \
     tesseract-ocr
+{{ end }}
 {{- end -}}
