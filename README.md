@@ -87,6 +87,15 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 winget install Git.Git twpayne.chezmoi
 ```
 
+Then enable Developer Mode so chezmoi can create symlinks (rules/skills shared between `.claude` and `.agents`) without admin. Either toggle **Settings → System → For Developers → Developer Mode** ON, or in an **elevated** PowerShell window:
+
+```powershell
+New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock' `
+    -Name AllowDevelopmentWithoutDevLicense -Value 1 -PropertyType DWord -Force
+```
+
+Without this, `chezmoi apply` fails with `A required privilege is not held by the client` on the first symlink.
+
 chezmoi needs Git Bash to run `.sh` modify scripts and body-wrapped chezmoiscripts. The repo's [`[interpreters.sh]`](home/.chezmoi.toml.tmpl) points chezmoi at `C:/Program Files/Git/bin/bash.exe`.
 
 #### Step 2: Apply
