@@ -15,10 +15,10 @@ gh = "2.92.0"
 # renovate: packageName=googleworkspace/cli datasource=github-releases
 "github:googleworkspace/cli" = "0.22.5"
 # renovate: go
-go = "1.26.2"
+go = { version = "1.26.2", os = ["linux"] }
 # renovate: packageName=golangci/golangci-lint datasource=github-releases
-golangci-lint = "2.12.0"
-java = "temurin-25.0.3+9.0.LTS"
+golangci-lint = { version = "2.12.0", os = ["linux"] }
+java = { version = "temurin-25.0.3+9.0.LTS", os = ["linux"] }
 # renovate: jq
 jq = "1.8.1"
 # renovate: packageName=jj-vcs/jj datasource=github-releases
@@ -33,7 +33,7 @@ starship = "1.25.1"
 # renovate: packageName=astral-sh/uv datasource=github-releases
 uv = "0.11.8"
 # renovate: packageName=hashicorp/terraform datasource=github-releases
-terraform = "1.15.1"
+terraform = { version = "1.15.1", os = ["linux"] }
 # renovate: packageName=ajeetdsouza/zoxide datasource=github-releases
 zoxide = "0.9.9"
 

@@ -55,7 +55,8 @@ add_repo_raw_key "docker" \
     "https://download.docker.com/linux/ubuntu/gpg" \
     "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu jammy stable"
 
-# --- VS Code ---
+{{ if .isLinuxBaremetal }}
+# --- VS Code (bare-metal only — WSL uses Remote-WSL against host install) ---
 if [[ ! -f /etc/apt/sources.list.d/vscode.list ]]; then
     printf "Adding repo: vscode\n"
     curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft.gpg
@@ -63,31 +64,32 @@ if [[ ! -f /etc/apt/sources.list.d/vscode.list ]]; then
         | sudo tee /etc/apt/sources.list.d/vscode.list > /dev/null
 fi
 
-# --- Google Chrome ---
+# --- Google Chrome (bare-metal only) ---
 add_repo "google-chrome" \
     "/usr/share/keyrings/google-chrome.gpg" \
     "https://dl.google.com/linux/linux_signing_key.pub" \
     "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main"
 
-# --- OneDrive (abraunegg) ---
+# --- OneDrive (abraunegg) (bare-metal only — WSL doesn't sync host's OneDrive) ---
 add_repo "onedrive" \
     "/usr/share/keyrings/obs-onedrive.gpg" \
     "https://download.opensuse.org/repositories/home:/npreining:/debian-ubuntu-onedrive/xUbuntu_24.04/Release.key" \
     "deb [arch=amd64 signed-by=/usr/share/keyrings/obs-onedrive.gpg] https://download.opensuse.org/repositories/home:/npreining:/debian-ubuntu-onedrive/xUbuntu_24.04/ ./"
 
-# --- KeePassXC PPA ---
+# --- KeePassXC PPA (bare-metal only) ---
 if [[ ! -f /etc/apt/sources.list.d/phoerious-keepassxc-noble.list ]] && \
    ! find /etc/apt/sources.list.d/ -name '*keepassxc*' -print -quit 2>/dev/null | grep -q .; then
     printf "Adding PPA: phoerious/keepassxc\n"
     sudo add-apt-repository -y ppa:phoerious/keepassxc
 fi
 
-# --- OpenShot PPA ---
+# --- OpenShot PPA (bare-metal only) ---
 if [[ ! -f /etc/apt/sources.list.d/openshot_developers-ppa-noble.list ]] && \
    ! find /etc/apt/sources.list.d/ -name '*openshot*' -print -quit 2>/dev/null | grep -q .; then
     printf "Adding PPA: openshot.developers\n"
     sudo add-apt-repository -y ppa:openshot.developers/ppa
 fi
+{{ end }}
 
 # --- Trivy ---
 add_repo "trivy" \

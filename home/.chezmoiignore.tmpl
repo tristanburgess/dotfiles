@@ -31,11 +31,16 @@ bin/toggle-dnd.sh
 # ─── Linux/WSL: hide Windows-only target files ───
 .minttyrc
 .bashrc
+.wslconfig
 {{ end }}
 
 {{ if and (eq .chezmoi.os "linux") $isWSL }}
 # ─── WSL: hide bare-metal-only target files that fail in WSLg ───
 bin/toggle-dnd.sh
+# Notion/Calibre-bound skills only run where Notion Desktop + Calibre live
+# (bare-metal Linux + Windows host). WSL has neither.
+.claude/skills/guitar-tutor/**
+.claude/skills/health/**
 {{ end }}
 
 {{ if not (get . "installClaude" | default true) }}
