@@ -30,7 +30,7 @@ Profile picks (q4_K_M weights, total RAM expected with usable ctx):
 
 | Profile | code / prose / think | Style | RAM tier | App-cleanup expectation |
 |---------|----------------------|-------|----------|-------------------------|
-| `lean` | `qwen2.5-coder:14b` / `gemma3:12b` / `qwen3:8b` | small dense, always fits | 16+ GB | none — runs alongside browsers |
+| `lean` | `qwen3:14b` / `gemma3:12b` / `qwen3:8b` | small dense, always fits | 16+ GB | none — runs alongside browsers |
 | `fast` | `gemma4:26b-a4b` MoE / `gemma4:e4b` / `qwen3.6:35b-a3b` MoE | MoE-first, fastest decode, tiny prose | 32 GB w/ Chrome closed, 48+ GB comfortable | close heavy apps on 32 GB |
 | `balanced` | `qwen3.6:35b-a3b` MoE / `gemma4:26b-a4b` MoE / `qwen3.6:35b-a3b` MoE | MoE everywhere, consistent quality | 32 GB w/ Chrome closed, 48+ GB comfortable | close heavy apps on 32 GB |
 | `smart` | `qwen3.6:27b` dense / `gemma4:31b` dense / `qwen3.6:27b` dense | densest weights, highest single-shot quality, smallest ctx | 32 GB w/ Chrome closed (≤ 5K ctx prose lane), 48+ GB for full ctx | close all heavy apps on 32 GB |

@@ -30,7 +30,7 @@
        .cloud.{sonnet,opus,haiku}.
 
        Local lanes are picked by the localProfile flag below:
-         lean     — qwen2.5-coder:14b code + gemma3:12b prose + qwen3:8b think.
+         lean     — qwen3:14b code + gemma3:12b prose + qwen3:8b think.
                     Fits on any 16+ GB machine with typical app load. Best for
                     32 GB machines where browsers and other apps stay open.
          fast     — gemma4:26b-a4b code + gemma4:e4b prose + qwen3.6:35b-a3b
@@ -49,7 +49,7 @@
 {{- $ollamaProse := "" -}}
 {{- $ollamaThink := "" -}}
 {{- if eq $localProfile "lean" -}}
-{{-   $ollamaCode  = "qwen2.5-coder:14b-q4_K_M" -}}
+{{-   $ollamaCode  = "qwen3:14b-q4_K_M" -}}
 {{-   $ollamaProse = "gemma3:12b-it-q4_K_M" -}}
 {{-   $ollamaThink = "qwen3:8b-q4_K_M" -}}
 {{- else if eq $localProfile "fast" -}}
@@ -172,9 +172,20 @@
        Invariants: trivialCtx ≤ localPerfCtx ≤ complexCtx. Setting
        localPerfCtx below trivialCtx forces trivial requests cloud (most
        aggressive cloud bias); setting it above complexCtx is a no-op. */ -}}
-{{- $trivialCtx := 12000 -}}
-{{- $localPerfCtx := promptIntOnce (get . "routing" | default dict) "localPerfCtx" (printf "Soft ctx ceiling — route above this to cloud (-1 to disable). Hardware-derived default: %d tokens" $ollamaNumCtx) $ollamaNumCtx -}}
-{{- $complexCtx := 60000 -}}
+{{- /* trivialCtx clamp: never exceed ollamaNumCtx, otherwise smart-profile
+       small-RAM machines route trivial sonnet/opus to a local model that
+       can't fit the request. Hard ceiling stays at 12000 (the Claude Code
+       baseline below which a request is unambiguously cheap). */ -}}
+{{- $trivialCtx := min 12000 $ollamaNumCtx -}}
+{{- /* localPerfCtx = ollamaNumCtx: local model capacity IS the routing ceiling.
+       Override ~/.config/chezmoi/chezmoi.toml manually if you want a lower
+       threshold (e.g. Vulkan KV cache gets slow past 16K). */ -}}
+{{- $localPerfCtx := $ollamaNumCtx -}}
+{{- /* complexCtx: escalate to dedicated long-context cloud path above this.
+       Grows with local capacity so we never cut off local at 60K when the
+       model can hold more. Currently a no-op (ollamaNumCtx capped at 32768)
+       but forward-compatible if the cap is raised. */ -}}
+{{- $complexCtx := max 60000 $ollamaNumCtx -}}
 {{- /* Subagent names sniffed from request system prompts purely for audit
        logging (subagent=<name> field on log lines). Does not affect
        routing decisions. Add new agents here as you adopt them. */ -}}
