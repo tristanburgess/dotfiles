@@ -22,6 +22,7 @@ add_line_re() {
     fi
 }
 
+add_line    'BASH_ENV'             'export BASH_ENV="$HOME/.config/bash/noninteractive.sh"'
 add_line    'mise activate bash'   'eval "$(mise activate bash)"'
 add_line    'starship init bash'   'eval "$(starship init bash)"'
 add_line    'zoxide init bash'     'eval "$(zoxide init bash)"'
