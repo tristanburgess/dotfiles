@@ -25,7 +25,6 @@ add_line_re() {
 add_line    'BASH_ENV'             'export BASH_ENV="$HOME/.config/bash/noninteractive.sh"'
 add_line    'mise activate bash'   'eval "$(mise activate bash)"'
 add_line    'starship init bash'   'eval "$(starship init bash)"'
-add_line    'zoxide init bash'     'eval "$(zoxide init bash)"'
 add_line_re 'GOPATH.*bin'          'export PATH="$(go env GOPATH)/bin:$PATH"'
 add_line    'jj util completion'   'source <(jj util completion bash)'
 add_line    'NVM_DIR'              'export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"'
@@ -49,4 +48,11 @@ else
     start_ssh_agent
 fi
 ssh-add -l &>/dev/null || ssh-add 2>/dev/null'
+
+# zoxide MUST be last — it hooks cd/precmd and breaks if anything redefines them after.
+# Move it to the end if a previous run placed it in the wrong position.
+if grep -qF 'zoxide init bash' "$HOME/.bashrc"; then
+    sed -i '/zoxide init bash/d' "$HOME/.bashrc"
+fi
+echo 'eval "$(zoxide init bash)"' >> "$HOME/.bashrc"
 {{- end -}}
