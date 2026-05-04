@@ -32,13 +32,11 @@
         "opus[1m]",
         "haiku"
       ],
+      {{- if ne (get . "cloudAuth" | default "apikey") "ccs-pro" }}
       "transformer": {
-        {{- if eq (get . "cloudAuth" | default "apikey") "ccs-pro" }}
-        "use": ["cloudfallback"]
-        {{- else }}
         "use": ["Anthropic", "cloudfallback"]
-        {{- end }}
       }
+      {{- end }}
     },
     {
       "name": "ollama",
@@ -58,5 +56,8 @@
     "longContext": "anthropic,{{ .cloud.sonnet }}",
     "longContextThreshold": 60000,
     "webSearch":   "anthropic,{{ .cloud.sonnet }}"
+  },
+  "fallback": {
+    "default": ["ollama,{{ .ollama.code }}"]
   }
 }

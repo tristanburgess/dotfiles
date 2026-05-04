@@ -33,9 +33,33 @@
 
 const fs   = require("fs");
 const path = require("path");
+const net  = require("net");
 
 const DEFAULT_LOCAL  = {{ get . "defaultLocal" | default true }};
 const CLOUD_THINKING = {{ get . "cloudThinking" | default true }};
+{{ if eq (get . "cloudAuth" | default "apikey") "ccs-pro" -}}
+// ccs-pro: cache CCS proxy health. A 200ms TCP probe per-request is too slow;
+// cache result for 10s. Down = treat all cloud families as grounded.
+const CCS_HOST = "127.0.0.1";
+const CCS_PORT = 8317;
+let _ccsHealthy    = true;
+let _ccsCheckedAt  = 0;
+const CCS_CACHE_MS = 10000;
+
+function ccsIsHealthy() {
+  const now = Date.now();
+  if (now - _ccsCheckedAt < CCS_CACHE_MS) return Promise.resolve(_ccsHealthy);
+  return new Promise(resolve => {
+    const sock = new net.Socket();
+    const done = (ok) => { sock.destroy(); _ccsHealthy = ok; _ccsCheckedAt = Date.now(); resolve(ok); };
+    sock.setTimeout(200);
+    sock.on("connect", () => done(true));
+    sock.on("error",   () => done(false));
+    sock.on("timeout", () => done(false));
+    sock.connect(CCS_PORT, CCS_HOST);
+  });
+}
+{{- end }}
 
 const STATUS_FILE = path.join(
   process.env.HOME || process.env.USERPROFILE || "",
@@ -296,6 +320,19 @@ module.exports = async function router(req /*, config */) {
     log({ reqId, model, cls: "override", reason: override.key, dest: override.dest, body });
     return override.dest;
   }
+
+{{ if eq (get . "cloudAuth" | default "apikey") "ccs-pro" -}}
+  // 1.4. ccs-pro: if CLIProxy is not reachable, all cloud routes would get
+  //      ECONNREFUSED which CCR treats as internal_error (not provider_response_error)
+  //      and does NOT trigger the fallback config. Pre-empt by probing port 8317.
+  const ccsOk = await ccsIsHealthy();
+  if (!ccsOk) {
+    const lane = localLaneFor(body);
+    log({ reqId, model, cls, reason: "ccs-proxy-down", dest: lane.dest, body,
+      extras: { laneSignal: lane.signal } });
+    return lane.dest;
+  }
+{{- end }}
 
   // 1.5. Cloud-fallback gate. If the cloudfallback transformer recorded a
   //      429/5xx for this model family, force-route to the matching local

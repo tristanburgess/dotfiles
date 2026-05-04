@@ -95,23 +95,32 @@ if ($ccsCmd) {
 }
 {{- end }}
 
-# Restart loop with fixed 5s backoff (matches systemd RestartSec=5s).
-$backoffSec = 5
+# ccr v2+ self-daemonizes on `ccr start` — process-supervision loop no longer
+# works (ccr start returns immediately with code=0 every call). Instead, poll
+# the PID file to detect crashes and restart only when actually down.
+$pidFile    = Join-Path $ccrDir '.claude-code-router.pid'
+$pollSec    = 30
+
+# Initial start.
+$ts = (Get-Date).ToString('o')
+Add-Content $logFile "$ts [supervisor] starting ccr ($ccrCmd)"
+$null = & $ccrCmd start 2>&1
+
 while ($true) {
+    Start-Sleep -Seconds $pollSec
     $ts = (Get-Date).ToString('o')
-    Add-Content $logFile "$ts [supervisor] starting ccr ($ccrCmd)"
 
-    # Stream child output through a per-line timestamp prefixer so the audit
-    # script can do --since filtering without journalctl. *>&1 merges
-    # stderr+stdout; ForEach-Object runs as the line arrives.
-    & $ccrCmd start *>&1 | ForEach-Object {
-        $line = "$((Get-Date).ToString('o')) $_"
-        Add-Content -Path $logFile -Value $line
-        Write-Host $line
+    # CCR writes its PID to the pid file; check if that process is alive.
+    $running = $false
+    if (Test-Path $pidFile) {
+        $pid = (Get-Content $pidFile -ErrorAction SilentlyContinue) -as [int]
+        if ($pid -gt 0) {
+            $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
+            $running = $null -ne $proc
+        }
     }
-    $exitCode = $LASTEXITCODE
-
-    $ts = (Get-Date).ToString('o')
-    Add-Content $logFile "$ts [supervisor] ccr exited code=$exitCode - restarting in ${backoffSec}s"
-    Start-Sleep -Seconds $backoffSec
+    if (-not $running) {
+        Add-Content $logFile "$ts [supervisor] ccr not running (pid check failed) - restarting"
+        $null = & $ccrCmd start 2>&1
+    }
 }
