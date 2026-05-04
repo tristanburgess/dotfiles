@@ -15,6 +15,9 @@ Environment=PATH=%h/.local/share/mise/shims:%h/.local/bin:/usr/local/bin:/usr/bi
 # file and the run_onchange ccr-service script restarts the unit.
 Environment=CCR_LOG_PROMPT=1
 {{- end }}
+{{- if eq (get . "cloudAuth" | default "apikey") "ccs-pro" }}
+ExecStartPre=%h/.local/share/mise/shims/ccs cliproxy start
+{{- end }}
 ExecStart=%h/.local/share/mise/shims/ccr start
 Restart=on-failure
 RestartSec=5s

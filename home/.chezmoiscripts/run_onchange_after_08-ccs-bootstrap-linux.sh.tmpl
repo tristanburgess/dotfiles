@@ -1,0 +1,45 @@
+{{- if and .isLinuxBaremetal .installClaude (get . "useCcr" | default true) (eq (get . "cloudAuth" | default "apikey") "ccs-pro") -}}
+#!/bin/bash
+# CCS bootstrap for ccs-pro cloud auth mode (Linux bare-metal).
+# cloudAuth: {{ .cloudAuth }}
+set -euo pipefail
+
+CCS_CMD=$(command -v ccs 2>/dev/null || true)
+
+if [ -z "$CCS_CMD" ]; then
+    printf "[ccs-bootstrap] Installing @kaitranntt/ccs...\n"
+    npm install -g @kaitranntt/ccs
+    # Reshim so mise exposes the new global.
+    if command -v mise >/dev/null 2>&1; then mise reshim; fi
+    CCS_CMD=$(command -v ccs 2>/dev/null || true)
+fi
+
+if [ -z "$CCS_CMD" ]; then
+    printf "[ccs-bootstrap] WARNING: ccs not found after install. Re-run chezmoi apply or add npm global bin to PATH.\n" >&2
+    exit 0
+fi
+
+printf "[ccs-bootstrap] ccs found at %s\n" "$CCS_CMD"
+
+# Install CLIProxy binary if missing.
+CLIPROXY_EXE="${HOME}/.ccs/cliproxy/bin/original/cli-proxy-api"
+if [ ! -f "$CLIPROXY_EXE" ]; then
+    printf "[ccs-bootstrap] Installing CLIProxy binary...\n"
+    "$CCS_CMD" cliproxy --latest
+fi
+
+# Check OAuth token for claude provider.
+AUTH_DIR="${HOME}/.ccs/cliproxy/auth"
+if ! ls "${AUTH_DIR}"/claude-*.json 2>/dev/null | grep -q .; then
+    printf "\n"
+    printf "  +- ccs-pro auth required ----------------------------------------+\n"
+    printf "  |                                                                  |\n"
+    printf "  |  Run the following to link your Claude.ai Pro/Max account:       |\n"
+    printf "  |    ccs claude --auth                                             |\n"
+    printf "  |                                                                  |\n"
+    printf "  |  This opens a browser OAuth flow. Do it once per machine.        |\n"
+    printf "  |  CCR cloud-tier requests will fail until auth is complete.       |\n"
+    printf "  |                                                                  |\n"
+    printf "  +------------------------------------------------------------------+\n\n"
+fi
+{{- end -}}

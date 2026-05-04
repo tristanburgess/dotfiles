@@ -36,6 +36,7 @@ AppData/**
 .minttyrc
 .bashrc
 .wslconfig
+bin/ccr-start.ps1
 {{ end }}
 
 {{ if and (eq .chezmoi.os "linux") $isWSL }}
@@ -60,4 +61,5 @@ AppData/**
 # ─── User opted out of tiered model routing (no CCR + Ollama) ───
 .claude-code-router/**
 .config/systemd/user/claude-code-router.service
+bin/ccr-start.ps1
 {{ end }}

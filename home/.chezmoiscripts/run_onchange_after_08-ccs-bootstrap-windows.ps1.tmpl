@@ -1,0 +1,72 @@
+{{- if and (eq .chezmoi.os "windows") .installClaude (get . "useCcr" | default true) (eq (get . "cloudAuth" | default "apikey") "ccs-pro") -}}
+# CCS (Claude Code Switch) bootstrap for ccs-pro cloud auth mode.
+# Installs @kaitranntt/ccs + CLIProxy binary, reshims mise, and checks that
+# OAuth auth has been completed. Re-runs when cloudAuth flag changes.
+#
+# cloudAuth: {{ .cloudAuth }}
+
+$ErrorActionPreference = 'Stop'
+
+$ccsCmd = (Get-Command ccs -ErrorAction SilentlyContinue).Source
+if (-not $ccsCmd) {
+    $candidates = @(
+        (Join-Path $env:LOCALAPPDATA 'mise\shims\ccs.cmd'),
+        (Join-Path $env:LOCALAPPDATA 'mise\shims\ccs'),
+        (Join-Path $env:APPDATA     'npm\ccs.cmd')
+    )
+    foreach ($c in $candidates) { if (Test-Path $c) { $ccsCmd = $c; break } }
+}
+
+# Install if not present.
+if (-not $ccsCmd) {
+    Write-Host "[ccs-bootstrap] Installing @kaitranntt/ccs..."
+    npm install -g @kaitranntt/ccs
+    # Reshim so mise exposes the new global.
+    $miseBin = (Get-Command mise -ErrorAction SilentlyContinue).Source
+    if ($miseBin) { & $miseBin reshim }
+    # Refresh ccsCmd after install.
+    $ccsCmd = (Get-Command ccs -ErrorAction SilentlyContinue).Source
+    if (-not $ccsCmd) {
+        $candidates = @(
+            (Join-Path $env:LOCALAPPDATA 'mise\shims\ccs.cmd'),
+            (Join-Path $env:LOCALAPPDATA 'mise\shims\ccs'),
+            (Join-Path $env:APPDATA     'npm\ccs.cmd')
+        )
+        foreach ($c in $candidates) { if (Test-Path $c) { $ccsCmd = $c; break } }
+    }
+}
+
+if (-not $ccsCmd) {
+    Write-Warning "[ccs-bootstrap] ccs not found after install. Re-run chezmoi apply or add npm global bin to PATH."
+    exit 0
+}
+
+Write-Host "[ccs-bootstrap] ccs found at $ccsCmd"
+
+# Install CLIProxy binary if missing.
+$cliproxyExe = Join-Path $env:USERPROFILE '.ccs\cliproxy\bin\original\cli-proxy-api.exe'
+if (-not (Test-Path $cliproxyExe)) {
+    Write-Host "[ccs-bootstrap] Installing CLIProxy binary..."
+    & $ccsCmd cliproxy --latest
+}
+
+# Check OAuth token for claude provider.
+$authDir  = Join-Path $env:USERPROFILE '.ccs\cliproxy\auth'
+$hasToken = (Test-Path $authDir) -and (Get-ChildItem $authDir -Filter 'claude-*.json' -ErrorAction SilentlyContinue | Select-Object -First 1)
+
+if (-not $hasToken) {
+    Write-Warning @"
+
+  +- ccs-pro auth required ----------------------------------------+
+  |                                                                  |
+  |  Run the following to link your Claude.ai Pro/Max account:       |
+  |    ccs claude --auth                                             |
+  |                                                                  |
+  |  This opens a browser OAuth flow. Do it once per machine.        |
+  |  CCR cloud-tier requests will fail until auth is complete.       |
+  |                                                                  |
+  +------------------------------------------------------------------+
+
+"@
+}
+{{- end -}}

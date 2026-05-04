@@ -13,8 +13,13 @@
   "Providers": [
     {
       "name": "anthropic",
+      {{- if eq (get . "cloudAuth" | default "apikey") "ccs-pro" }}
+      "api_base_url": "http://127.0.0.1:8317/v1/chat/completions",
+      "api_key": "ccs-internal-managed",
+      {{- else }}
       "api_base_url": "https://api.anthropic.com/v1/messages",
       "api_key": "$ANTHROPIC_API_KEY",
+      {{- end }}
       "models": [
         "{{ .cloud.opus }}",
         "{{ .cloud.opus }}[1m]",
@@ -27,9 +32,11 @@
         "opus[1m]",
         "haiku"
       ],
+      {{- if ne (get . "cloudAuth" | default "apikey") "ccs-pro" }}
       "transformer": {
         "use": ["Anthropic", "cloudfallback"]
       }
+      {{- end }}
     },
     {
       "name": "ollama",
@@ -49,5 +56,8 @@
     "longContext": "anthropic,{{ .cloud.sonnet }}",
     "longContextThreshold": 60000,
     "webSearch":   "anthropic,{{ .cloud.sonnet }}"
+  },
+  "fallback": {
+    "default": ["ollama,{{ .ollama.code }}"]
   }
 }

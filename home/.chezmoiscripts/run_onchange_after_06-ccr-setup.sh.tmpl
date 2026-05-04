@@ -1,4 +1,4 @@
-{{- if and .isLinuxBaremetal .installClaude (get . "useCcr" | default true) -}}
+{{- if and .isLinuxBaremetal .installClaude (get . "useCcr" | default true) (ne (get . "cloudAuth" | default "apikey") "ccs-pro") -}}
 #!/bin/bash
 set -euo pipefail
 
