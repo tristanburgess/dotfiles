@@ -26,9 +26,15 @@ if ($existing) {
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
 }
 
+# Launch via conhost.exe --headless instead of powershell.exe directly.
+# Windows Terminal (Win11 default terminal) intercepts powershell.exe
+# launches and opens a visible window despite -WindowStyle Hidden.
+# Conhost is the underlying console host; using it directly bypasses
+# Windows Terminal entirely — no window, no admin required.
+$conhost = Join-Path $env:SystemRoot 'System32\conhost.exe'
 $action = New-ScheduledTaskAction `
-    -Execute 'powershell.exe' `
-    -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$wrapper`""
+    -Execute $conhost `
+    -Argument "--headless -- powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$wrapper`""
 
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 

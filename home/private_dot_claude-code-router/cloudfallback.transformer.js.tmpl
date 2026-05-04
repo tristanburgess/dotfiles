@@ -2,6 +2,15 @@
 // state file so the router (router.js) can force-route the affected model
 // family to the local Ollama lane until the window passes.
 //
+// CCR architecture note: in v2.0.0, response transformers (transformResponseIn)
+// only run on 2xx upstream replies. CCR's fD function throws a
+// "provider_response_error" on any non-2xx and CCR's static fallback handles
+// retry to local before transformers ever see the failure. To capture errors
+// regardless, this module monkey-patches globalThis.fetch at load time. Since
+// CCR loads transformer modules into its own Node process, the wrapped fetch
+// is what fD calls, and we get to inspect upstream Response objects (status,
+// retry-after) before fD's status check throws.
+//
 // Wired in via config.json:
 //   transformers: [{ path: "<homeDir>/.claude-code-router/cloudfallback.transformer.js" }]
 //   Providers[].transformer.use: ["Anthropic", "cloudfallback"]   (apikey mode)
@@ -13,9 +22,9 @@
 // TTL strategy:
 //   - 429 with Retry-After header: until = now + Retry-After + 5s slack
 //   - 429 without Retry-After:     until = now + 60min  (5h-quota class default)
-//   - 401 (OAuth refresh failure):  until = now + 2min  (short — user can re-auth)
-//   - 5xx (provider outage):       exponential backoff per family —
-//                                  60s → 5m → 25m → 60m cap, resets on 2xx
+//   - 401 (OAuth refresh failure):  until = now + 2min  (short, user can re-auth)
+//   - 5xx (provider outage):       exponential backoff per family,
+//                                  60s -> 5m -> 25m -> 60m cap, resets on 2xx
 //
 // Anthropic doesn't expose 5h vs weekly window boundaries in headers; we
 // trust Retry-After when it's present and use a conservative default when
@@ -78,6 +87,77 @@ function clearDown(family) {
     delete status[family];
     writeStatus(status);
   }
+}
+
+function recordStatus(family, status, headers) {
+  if (!family) return;
+  if (status === 429) {
+    const ra = parseInt((headers && headers.get && headers.get("retry-after")) || "0", 10);
+    const ttl = (ra > 0 ? ra : DEFAULT_429_TTL_S) + 5;
+    setDown(family, ttl, ra > 0 ? `429-retry-after=${ra}` : "429-no-header");
+    backoff[family] = BACKOFF_INIT_S;
+  } else if (status === 401) {
+    setDown(family, DEFAULT_401_TTL_S, "401-auth-expired");
+  } else if (status >= 500 && status < 600) {
+    // Exponential backoff with full jitter (plano-style). Picks a random TTL
+    // in [BACKOFF_INIT_S, current backoff value] to avoid thundering-herd
+    // when several requests fail near-simultaneously and the marker expires.
+    const ttl = BACKOFF_INIT_S + Math.floor(Math.random() * Math.max(1, backoff[family] - BACKOFF_INIT_S + 1));
+    setDown(family, ttl, `${status}-backoff`);
+    backoff[family] = Math.min(backoff[family] * BACKOFF_MULT, BACKOFF_CAP_S);
+  } else if (status >= 200 && status < 300) {
+    const cur = readStatus();
+    if (cur[family]) clearDown(family);
+    backoff[family] = BACKOFF_INIT_S;
+  }
+}
+
+// Monkey-patch globalThis.fetch to capture upstream Response objects before
+// CCR's fD function sees a non-2xx status and throws. CCR loads transformers
+// into the same Node process, so wrapping fetch here intercepts all calls
+// the gateway makes to upstream providers. We only mark families based on
+// requests that target Anthropic-shaped upstreams (api.anthropic.com or the
+// local ccs-pro proxy on 127.0.0.1:8317).
+const ANTHROPIC_URL_RE = /(?:api\.anthropic\.com|127\.0\.0\.1:8317)/i;
+
+function familyFromBody(rawBody) {
+  if (!rawBody) return null;
+  try {
+    const s = typeof rawBody === "string" ? rawBody : Buffer.from(rawBody).toString("utf8");
+    const m = s.match(/"model"\s*:\s*"([^"]+)"/);
+    return m ? familyFromModel(m[1]) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+if (!globalThis.__ccrFetchPatched) {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async function patchedFetch(input, init) {
+    const url = typeof input === "string" ? input : (input && input.url) || "";
+    const targetsCloud = ANTHROPIC_URL_RE.test(url);
+    let family = null;
+    if (targetsCloud && init && init.body) {
+      family = familyFromBody(init.body);
+    }
+    let resp;
+    try {
+      resp = await realFetch(input, init);
+    } catch (e) {
+      if (targetsCloud && family) {
+        const ttl = backoff[family];
+        setDown(family, ttl, `network-error:${(e && e.code) || e.message || "?"}`);
+        backoff[family] = Math.min(backoff[family] * BACKOFF_MULT, BACKOFF_CAP_S);
+      }
+      throw e;
+    }
+    if (targetsCloud) {
+      recordStatus(family, resp.status, resp.headers);
+    }
+    return resp;
+  };
+  globalThis.__ccrFetchPatched = true;
+  console.log("[cloudfallback] global fetch patched for upstream-error capture");
 }
 
 class CloudFallbackTransformer {

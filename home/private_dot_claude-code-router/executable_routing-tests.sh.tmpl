@@ -1,0 +1,146 @@
+#!/bin/bash
+# CCR routing regression suite. Sends a battery of Anthropic-shaped requests
+# against the local CCR proxy (127.0.0.1:3456) and asserts the audit log's
+# selected destination against expected matchers. Intended for manual runs
+# after editing router.js, transformers, or chezmoi data; not wired to CI.
+#
+# Requires CCR running, secrets.env present, and journalctl access to the
+# claude-code-router user service. Logs are read via `journalctl --user`,
+# so the calling user must own the service.
+#
+# Run: chezmoi apply, then ~/.claude-code-router/routing-tests.sh
+
+set -uo pipefail
+
+CCR_URL="${CCR_URL:-http://127.0.0.1:3456/v1/messages}"
+STATUS_FILE="${HOME}/.claude-code-router/cloud-status.json"
+STATUS_BACKUP="${STATUS_FILE}.routingtest.bak"
+
+# Restore any pre-existing cloud-status.json after the run so we don't
+# stomp on a real outage marker.
+[[ -f "$STATUS_FILE" ]] && cp "$STATUS_FILE" "$STATUS_BACKUP"
+trap 'restore_status' EXIT
+restore_status() {
+    if [[ -f "$STATUS_BACKUP" ]]; then
+        mv "$STATUS_BACKUP" "$STATUS_FILE"
+    else
+        rm -f "$STATUS_FILE"
+    fi
+}
+
+SECRETS="${HOME}/.claude-code-router/secrets.env"
+# shellcheck disable=SC1090
+[[ -f "$SECRETS" ]] && source "$SECRETS"
+API_KEY="${ANTHROPIC_API_KEY:-test-key}"
+
+PASS=0
+FAIL=0
+FAILED=()
+
+audit_tail() {
+    journalctl --user -u claude-code-router --since "$1" 2>/dev/null | grep -F '[router]' | tail -1
+}
+
+run_test() {
+    local name="$1" body="$2" expected_dest="$3" expected_reason="${4:-}"
+    # Reset cloud-status state before each test unless the test itself
+    # staged a marker via STAGE_DOWN (see set_down + run_test_staged).
+    if [[ -z "${STAGE_DOWN:-}" ]]; then
+        rm -f "$STATUS_FILE"
+    fi
+    local since
+    since=$(date '+%Y-%m-%d %H:%M:%S')
+    sleep 1
+    curl -s -m 30 -o /dev/null -w '' \
+        -X POST "$CCR_URL" \
+        -H "Content-Type: application/json" \
+        -H "x-api-key: $API_KEY" \
+        -H "anthropic-version: 2023-06-01" \
+        -d "$body" || true
+    sleep 1
+    local audit dest reason
+    audit=$(audit_tail "$since")
+    dest=$(printf '%s' "$audit" | sed -nE 's/.*-> ([^ ]+).*/\1/p')
+    if [[ -z "$dest" ]]; then
+        dest=$(printf '%s' "$audit" | grep -oE '(ollama|anthropic),[^ ]+' | tail -1)
+    fi
+    reason=$(printf '%s' "$audit" | grep -oE 'reason=[^ ]+' | head -1 | cut -d= -f2-)
+    local ok=1
+    [[ "$dest" =~ $expected_dest ]] || ok=0
+    if [[ -n "$expected_reason" ]]; then
+        [[ "$reason" =~ $expected_reason ]] || ok=0
+    fi
+    if [[ "$ok" == 1 ]]; then
+        printf '  PASS  %-32s dest=%s reason=%s\n' "$name" "$dest" "$reason"
+        PASS=$((PASS + 1))
+    else
+        printf '  FAIL  %-32s\n          expect dest~%s reason~%s\n          got    dest=%s reason=%s\n' \
+            "$name" "$expected_dest" "$expected_reason" "$dest" "$reason"
+        FAILED+=("$name")
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+set_down() {
+    local family="$1" ttl_s="${2:-3600}"
+    local until=$(($(date +%s%N) / 1000000 + ttl_s * 1000))
+    printf '{"%s":{"until":%d,"reason":"routing-test"}}' "$family" "$until" >"$STATUS_FILE"
+}
+
+clear_down() { rm -f "$STATUS_FILE"; }
+
+printf '\nCCR routing regression suite\n'
+printf '  CCR_URL=%s\n\n' "$CCR_URL"
+
+clear_down
+
+run_test "haiku-trivial" \
+    '{"model":"claude-haiku-4-5-20251001","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}' \
+    '^ollama,' 'local-default|trivial-local|haiku-default'
+
+run_test "sonnet-trivial-defaultLocal" \
+    '{"model":"claude-sonnet-4-6","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}' \
+    '^ollama,' 'trivial-local|borderline-local'
+
+run_test "opus-reasoning-verb" \
+    '{"model":"claude-opus-4-7","max_tokens":5,"messages":[{"role":"user","content":"explain why the sky is blue"}]}' \
+    '^anthropic,.*opus' 'verb|reasoning-verb'
+
+run_test "thinking-cloud-default" \
+    '{"model":"claude-opus-4-7","max_tokens":5,"thinking":{"type":"enabled","budget_tokens":1024},"messages":[{"role":"user","content":"plan something"}]}' \
+    '^anthropic,.*opus' 'thinking'
+
+run_test "override-code" \
+    '{"model":"claude-haiku-4-5-20251001","max_tokens":5,"messages":[{"role":"user","content":"@code refactor this"}]}' \
+    '^ollama,.*qwen3' '@code|override'
+
+run_test "override-prose" \
+    '{"model":"claude-haiku-4-5-20251001","max_tokens":5,"messages":[{"role":"user","content":"@prose draft this"}]}' \
+    '^ollama,.*gemma' '@prose|override'
+
+run_test "override-cloudthink" \
+    '{"model":"claude-haiku-4-5-20251001","max_tokens":5,"messages":[{"role":"user","content":"@cloudthink hard"}]}' \
+    '^anthropic,.*opus' '@cloudthink|override'
+
+run_test "server-side-web_search-forces-cloud" \
+    '{"model":"claude-haiku-4-5-20251001","max_tokens":5,"tools":[{"type":"web_search_20250305","name":"web_search"}],"messages":[{"role":"user","content":"latest news"}]}' \
+    '^anthropic,' 'server'
+
+set_down sonnet 3600
+STAGE_DOWN=1 run_test "fallback-sonnet-down" \
+    '{"model":"claude-sonnet-4-6","max_tokens":5,"messages":[{"role":"user","content":"any question that would normally go cloud and is not trivial"}]}' \
+    '^ollama,' 'cloud-fallback'
+clear_down
+
+set_down opus 3600
+STAGE_DOWN=1 run_test "fallback-opus-down-routes-think" \
+    '{"model":"claude-opus-4-7","max_tokens":5,"thinking":{"type":"enabled","budget_tokens":1024},"messages":[{"role":"user","content":"plan"}]}' \
+    '^ollama,' 'cloud-fallback'
+clear_down
+
+printf '\n---\n  %d pass / %d fail\n' "$PASS" "$FAIL"
+if [[ "$FAIL" -gt 0 ]]; then
+    printf '  failed:\n'
+    for n in "${FAILED[@]}"; do printf '    - %s\n' "$n"; done
+    exit 1
+fi
