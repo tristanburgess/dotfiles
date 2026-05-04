@@ -14,9 +14,24 @@
 
 $ErrorActionPreference = 'Stop'
 
+$codeBase   = '{{ .ollamaBase.code }}'
+$proseBase  = '{{ .ollamaBase.prose }}'
+$thinkBase  = '{{ .ollamaBase.think }}'
 $codeModel  = '{{ .ollama.code }}'
 $proseModel = '{{ .ollama.prose }}'
 $thinkModel = '{{ .ollama.think }}'
+$numCtx     = {{ .ollamaNumCtx }}
+
+{{ if lt .ollamaNumCtx 4096 -}}
+Write-Warning @"
+
+  WARNING: localProfile={{ .localProfile }} has tight context headroom on
+  this machine ({{ .totalRamGiB }} GB RAM). Computed num_ctx=${numCtx}.
+  Model may OOM or perform poorly. Consider closing browsers (smart) or
+  switching to localProfile=lean (14B models, always fits).
+
+"@
+{{ end -}}
 
 # Resolve ollama.exe - prefer PATH, fall back to the winget install path.
 $ollamaCmd = (Get-Command ollama -ErrorAction SilentlyContinue).Source
@@ -72,9 +87,39 @@ function Pull-IfMissing($model) {
     }
 }
 
-Pull-IfMissing $codeModel
-Pull-IfMissing $proseModel
-Pull-IfMissing $thinkModel
+# State file: last num_ctx the derived models were built with. Mismatch
+# triggers rebuild via `ollama create`.
+$ctxStateFile = Join-Path $env:LOCALAPPDATA 'dotfiles\ollama-derived-ctx'
+$prevCtx = ''
+if (Test-Path $ctxStateFile) { $prevCtx = (Get-Content $ctxStateFile -Raw).Trim() }
+
+function Create-Derived($base, $derived) {
+    if (($installed -contains $derived) -and ($prevCtx -eq "$numCtx")) {
+        Write-Host "Already built: $derived (num_ctx=$numCtx)"
+        return
+    }
+    Write-Host "Creating $derived (FROM $base, num_ctx=$numCtx)..."
+    $modelfile = "FROM $base`nPARAMETER num_ctx $numCtx"
+    # Pipe Modelfile content via stdin. /dev/stdin doesn't exist on Windows;
+    # use a temp file.
+    $tmp = New-TemporaryFile
+    Set-Content -Path $tmp -Value $modelfile -Encoding ASCII
+    try {
+        & $ollamaCmd create $derived -f $tmp
+    } finally {
+        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Pull-IfMissing $codeBase
+Pull-IfMissing $proseBase
+Pull-IfMissing $thinkBase
+
+Create-Derived $codeBase  $codeModel
+Create-Derived $proseBase $proseModel
+Create-Derived $thinkBase $thinkModel
+
+Set-Content -Path $ctxStateFile -Value "$numCtx"
 
 # Stale-tag cleanup: track the set of tags this script deployed last time
 # and prompt to remove the diff on profile change. State file lives under
@@ -83,7 +128,7 @@ $stateDir  = Join-Path $env:LOCALAPPDATA 'dotfiles'
 $stateFile = Join-Path $stateDir 'ollama-managed-tags'
 if (-not (Test-Path $stateDir)) { New-Item -ItemType Directory -Path $stateDir -Force | Out-Null }
 
-$activeTags = @($codeModel, $proseModel, $thinkModel) | Sort-Object -Unique
+$activeTags = @($codeBase, $proseBase, $thinkBase, $codeModel, $proseModel, $thinkModel) | Sort-Object -Unique
 $prevTags = @()
 if (Test-Path $stateFile) {
     $prevTags = @(Get-Content $stateFile | Where-Object { $_ -and $_.Trim() })
@@ -116,7 +161,8 @@ if ($stale.Count -gt 0) {
 Set-Content -Path $stateFile -Value $activeTags
 
 Write-Host ""
-Write-Host "Ollama ready. Active profile: {{ .localProfile }}. Models: $codeModel, $proseModel, $thinkModel."
+Write-Host "Ollama ready. Profile: {{ .localProfile }}, num_ctx=$numCtx, RAM={{ .totalRamGiB }} GiB."
+Write-Host "  derived models: $codeModel, $proseModel, $thinkModel"
 {{- else if eq .chezmoi.os "windows" -}}
 # useCcr=false teardown branch - stop here, do not pull models.
 Write-Host "useCcr=false - skipping Ollama model bootstrap on Windows."

@@ -24,7 +24,18 @@ All config changes (shell, kitty, Claude, mise, etc.) go in the chezmoi source a
 {{ if (get . "useCcr" | default true) -}}
 # Model Tiering
 
-A local proxy (`claude-code-router` on `127.0.0.1:3456`) routes each Claude Code call by requested model name, request shape, and estimated context size. Active local profile: **`{{ .localProfile }}`** (set at chezmoi init via the `localProfile` flag — `fast` | `balanced` | `smart`; bump models by editing `~/.config/chezmoi/chezmoi.toml` then `chezmoi apply`).
+A local proxy (`claude-code-router` on `127.0.0.1:3456`) routes each Claude Code call by requested model name, request shape, and estimated context size. Active local profile: **`{{ .localProfile }}`** (set at chezmoi init via the `localProfile` flag — `lean` | `fast` | `balanced` | `smart`; chezmoi init recommends a profile based on detected RAM, defaults to `lean` below 48 GB, `smart` at 48+ GB). Each profile has a hardware-aware `num_ctx` baked into Ollama Modelfiles at apply time, so model names carry a `-ctx<N>k` suffix (e.g. `qwen3.6:27b-q4_K_M-ctx{{ div .ollamaNumCtx 1000 }}k`). Bump models by editing `~/.config/chezmoi/chezmoi.toml` then `chezmoi apply`.
+
+Profile picks (q4_K_M weights, total RAM expected with usable ctx):
+
+| Profile | code / prose / think | Style | RAM tier | App-cleanup expectation |
+|---------|----------------------|-------|----------|-------------------------|
+| `lean` | `qwen2.5-coder:14b` / `gemma3:12b` / `qwen3:8b` | small dense, always fits | 16+ GB | none — runs alongside browsers |
+| `fast` | `gemma4:26b-a4b` MoE / `gemma4:e4b` / `qwen3.6:35b-a3b` MoE | MoE-first, fastest decode, tiny prose | 32 GB w/ Chrome closed, 48+ GB comfortable | close heavy apps on 32 GB |
+| `balanced` | `qwen3.6:35b-a3b` MoE / `gemma4:26b-a4b` MoE / `qwen3.6:35b-a3b` MoE | MoE everywhere, consistent quality | 32 GB w/ Chrome closed, 48+ GB comfortable | close heavy apps on 32 GB |
+| `smart` | `qwen3.6:27b` dense / `gemma4:31b` dense / `qwen3.6:27b` dense | densest weights, highest single-shot quality, smallest ctx | 32 GB w/ Chrome closed (≤ 5K ctx prose lane), 48+ GB for full ctx | close all heavy apps on 32 GB |
+
+Counter-intuitive: `smart` is the **heaviest** profile, not the leanest. Dense q4 31B (~20 GiB) beats MoE 35B-a3b (~17.5 GiB) on RAM despite the smaller nominal param count, because MoE compresses active params. Pick `smart` for quality per token; pick `fast`/`balanced` for MoE decode speed; pick `lean` when nothing else fits.
 
 | Tier | Backend | Models | Triggers |
 |------|---------|--------|----------|

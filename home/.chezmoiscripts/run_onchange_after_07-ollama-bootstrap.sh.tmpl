@@ -28,9 +28,13 @@ set -euo pipefail
 #
 # See home/.chezmoi.toml.tmpl for profile definitions.
 
+CODE_BASE="{{ .ollamaBase.code }}"
+PROSE_BASE="{{ .ollamaBase.prose }}"
+THINK_BASE="{{ .ollamaBase.think }}"
 CODE_MODEL="{{ .ollama.code }}"
 PROSE_MODEL="{{ .ollama.prose }}"
 THINK_MODEL="{{ .ollama.think }}"
+NUM_CTX={{ .ollamaNumCtx }}
 
 ollama_service_registered() {
     systemctl list-unit-files ollama.service >/dev/null 2>&1
@@ -43,20 +47,25 @@ if ! command -v ollama >/dev/null 2>&1 || ! ollama_service_registered; then
     curl -fsSL https://ollama.com/install.sh | sh
 fi
 
-# Vulkan backend + context-window systemd drop-in. Idempotent: only writes
-# when contents change.
+# Vulkan backend systemd drop-in. Idempotent: only writes when contents change.
 #
-# OLLAMA_NUM_CTX matches CCR's localPerfCtx (router-side threshold above
-# which requests escape to cloud). Keeping them in sync means anything CCR
-# routes local actually fits in the model's context — Ollama's default
-# 4096 silently truncates the rest, throwing away most of long Claude Code
-# system prompts. Falls back to 20000 when localPerfCtx is -1 (disabled).
+# Note on context window: we deliberately do NOT set OLLAMA_CONTEXT_LENGTH
+# here. Per Ollama docs, env vars are unreliable for context — some models
+# hard-set num_ctx in their built-in Modelfile, ignoring the env var (see
+# ollama/ollama#10829). The Modelfile path is authoritative: the bootstrap
+# below pulls $*_BASE then creates $*_MODEL via `ollama create -f` with
+# PARAMETER num_ctx baked in. CCR/router/audit reference the derived
+# $*_MODEL names, so the runtime ctx always matches our computed value.
 OVERRIDE_DIR="/etc/systemd/system/ollama.service.d"
 OVERRIDE_FILE="$OVERRIDE_DIR/vulkan.conf"
 DESIRED_OVERRIDE='[Service]
 Environment="OLLAMA_VULKAN=1"
-Environment="OLLAMA_NUM_CTX={{ if gt .routing.localPerfCtx 0 }}{{ .routing.localPerfCtx }}{{ else }}20000{{ end }}"
 '
+{{ if lt .ollamaNumCtx 4096 -}}
+printf "⚠  WARNING: localProfile=%s has tight context headroom on this machine (%d GB RAM).\n" "{{ .localProfile }}" "{{ .totalRamGiB }}" >&2
+printf "   Computed ollamaNumCtx=%d. Model may OOM or perform poorly.\n" "{{ .ollamaNumCtx }}" >&2
+printf "   Consider closing browsers (smart) or switching to localProfile=lean.\n" >&2
+{{ end -}}
 
 if ! sudo test -f "$OVERRIDE_FILE" || \
    ! sudo cmp -s <(printf '%s' "$DESIRED_OVERRIDE") "$OVERRIDE_FILE"; then
@@ -87,17 +96,46 @@ for _ in $(seq 1 30); do
     printf "."
 done
 
+model_present() {
+    ollama list 2>/dev/null | awk 'NR>1 {print $1}' | grep -qx "$1"
+}
+
 pull_if_missing() {
     local model="$1"
-    if ! ollama list 2>/dev/null | awk 'NR>1 {print $1}' | grep -qx "$model"; then
+    if ! model_present "$model"; then
         printf "Pulling %s...\n" "$model"
         ollama pull "$model"
     fi
 }
 
-pull_if_missing "$CODE_MODEL"
-pull_if_missing "$PROSE_MODEL"
-pull_if_missing "$THINK_MODEL"
+# Re-create the derived Modelfile variant if missing OR if NUM_CTX changed.
+# State file records the ctx value the derived models were built against;
+# mismatch triggers rebuild.
+CTX_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
+CTX_STATE_FILE="$CTX_STATE_DIR/ollama-derived-ctx"
+mkdir -p "$CTX_STATE_DIR"
+PREV_CTX=""
+if [[ -f "$CTX_STATE_FILE" ]]; then PREV_CTX=$(cat "$CTX_STATE_FILE"); fi
+
+create_derived() {
+    local base="$1" derived="$2"
+    if model_present "$derived" && [[ "$PREV_CTX" == "$NUM_CTX" ]]; then
+        return 0
+    fi
+    printf "Creating %s (FROM %s, num_ctx=%s)...\n" "$derived" "$base" "$NUM_CTX"
+    printf 'FROM %s\nPARAMETER num_ctx %s\n' "$base" "$NUM_CTX" \
+        | ollama create "$derived" -f /dev/stdin
+}
+
+pull_if_missing "$CODE_BASE"
+pull_if_missing "$PROSE_BASE"
+pull_if_missing "$THINK_BASE"
+
+create_derived "$CODE_BASE"  "$CODE_MODEL"
+create_derived "$PROSE_BASE" "$PROSE_MODEL"
+create_derived "$THINK_BASE" "$THINK_MODEL"
+
+printf '%s' "$NUM_CTX" > "$CTX_STATE_FILE"
 
 # Stale-tag cleanup. State file tracks the (deduped) set of tags this
 # script deployed on the previous run. On profile switch:
@@ -111,7 +149,10 @@ STATE_FILE="$STATE_DIR/ollama-managed-tags"
 mkdir -p "$STATE_DIR"
 
 # shellcheck disable=SC2207
-ACTIVE_TAGS=($(printf '%s\n' "$CODE_MODEL" "$PROSE_MODEL" "$THINK_MODEL" | sort -u))
+ACTIVE_TAGS=($(printf '%s\n' \
+    "$CODE_BASE" "$PROSE_BASE" "$THINK_BASE" \
+    "$CODE_MODEL" "$PROSE_MODEL" "$THINK_MODEL" \
+    | sort -u))
 
 PREV_TAGS=()
 if [[ -f "$STATE_FILE" ]]; then
@@ -160,8 +201,9 @@ fi
 # Record the active set for the next run's diff.
 printf '%s\n' "${ACTIVE_TAGS[@]}" >"$STATE_FILE"
 
-printf "\nOllama ready. Active profile: %s. Models: %s, %s, %s. Vulkan backend enabled.\n" \
-    "{{ .localProfile }}" "$CODE_MODEL" "$PROSE_MODEL" "$THINK_MODEL"
+printf "\nOllama ready. Profile: %s, num_ctx=%s, RAM=%s GiB.\n" \
+    "{{ .localProfile }}" "$NUM_CTX" "{{ .totalRamGiB }}"
+printf "  derived models: %s, %s, %s\n" "$CODE_MODEL" "$PROSE_MODEL" "$THINK_MODEL"
 {{- else if and .isLinuxBaremetal .installClaude -}}
 #!/bin/bash
 set -euo pipefail
@@ -170,9 +212,13 @@ set -euo pipefail
 # (i.e., when the flag flips from true → false). Stops the Ollama service
 # and Vulkan override, then prompts to remove models + uninstall binary.
 
+CODE_BASE="{{ .ollamaBase.code }}"
+PROSE_BASE="{{ .ollamaBase.prose }}"
+THINK_BASE="{{ .ollamaBase.think }}"
 CODE_MODEL="{{ .ollama.code }}"
 PROSE_MODEL="{{ .ollama.prose }}"
 THINK_MODEL="{{ .ollama.think }}"
+ALL_TAGS=("$CODE_BASE" "$PROSE_BASE" "$THINK_BASE" "$CODE_MODEL" "$PROSE_MODEL" "$THINK_MODEL")
 
 if ! command -v ollama >/dev/null 2>&1; then
     # Nothing to tear down.
@@ -225,7 +271,7 @@ if ! [ -c /dev/tty ] || ! { : </dev/tty; } 2>/dev/null; then
     printf "\nNon-interactive shell — skipping model/binary removal.\n"
     printf "To finish cleanup manually:\n"
     printf "  sudo systemctl start ollama.service\n"
-    printf "  ollama rm %s %s %s\n" "$CODE_MODEL" "$PROSE_MODEL" "$THINK_MODEL"
+    printf "  ollama rm %s\n" "${ALL_TAGS[*]}"
     printf "  sudo systemctl stop ollama.service\n"
     printf "  sudo /usr/local/bin/ollama-uninstall.sh   # if you also want the binary gone\n"
     exit 0
@@ -233,7 +279,7 @@ fi
 
 # Model removal prompt.
 printf "\n"
-read -rp "Remove the three local models (~55 GB freed)? [y/N] " ans </dev/tty
+read -rp "Remove the local models (base + derived, ~55 GB freed)? [y/N] " ans </dev/tty
 case "$ans" in
     [yY]|[yY][eE][sS])
         # ollama rm needs the daemon running. Briefly start, rm, stop.
@@ -247,7 +293,7 @@ case "$ans" in
             sleep 1
             printf "."
         done
-        for m in "$CODE_MODEL" "$PROSE_MODEL" "$THINK_MODEL"; do
+        for m in "${ALL_TAGS[@]}"; do
             if ollama rm "$m" 2>/dev/null; then
                 printf "Removed %s\n" "$m"
             else

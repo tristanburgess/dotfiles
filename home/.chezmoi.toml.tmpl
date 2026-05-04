@@ -1,6 +1,26 @@
 {{- $name := promptStringOnce . "name" "Full name" -}}
 {{- $email := promptStringOnce . "email" "Email address" -}}
 {{- $aiTools := promptMultichoiceOnce . "aiTools" "AI tools to install" (list "claude" "codex") (list "claude") -}}
+
+{{- /* Detect total RAM for profile recommendation and num_ctx computation.
+       Zero means detection unsupported on this platform (e.g. WSL). */ -}}
+{{- $totalRamGiB := 0 -}}
+{{- if eq .chezmoi.os "windows" -}}
+{{-   $totalRamGiB = output "powershell" "-Command" "[math]::Round((Get-WmiObject Win32_OperatingSystem).TotalVisibleMemorySize/1MB,0)" | trim | atoi -}}
+{{- else if eq .chezmoi.os "linux" -}}
+{{-   $totalRamGiB = output "bash" "-c" "awk '/MemTotal/{printf \"%d\", $2/1024/1024}' /proc/meminfo" | trim | atoi -}}
+{{- end -}}
+
+{{- /* Recommend profile based on total RAM.
+       < 48 GB: lean (smart's prose lane is 31B at ~20 GiB; with 30%
+                headroom on 32 GB only ~4K ctx remains, too tight for
+                daily use).
+       >= 48 GB: smart (full 32K ctx achievable; quality wins justified).
+       User can still pick smart explicitly on 32 GB by overriding the
+       prompt — they'll just get a small ctx. */ -}}
+{{- $recommendedProfile := "lean" -}}
+{{- if ge $totalRamGiB 48 -}}{{- $recommendedProfile = "smart" -}}{{- end -}}
+
 {{- /* Single source of truth for model names referenced across the
        routing stack. Bumping a model here propagates to:
          - run_onchange_after_07-ollama-bootstrap.sh.tmpl (pull + teardown)
@@ -10,19 +30,29 @@
        .cloud.{sonnet,opus,haiku}.
 
        Local lanes are picked by the localProfile flag below:
+         lean     — qwen2.5-coder:14b code + gemma3:12b prose + qwen3:8b think.
+                    Fits on any 16+ GB machine with typical app load. Best for
+                    32 GB machines where browsers and other apps stay open.
          fast     — gemma4:26b-a4b code + gemma4:e4b prose + qwen3.6:35b-a3b
-                    think. Fastest swap/load, weaker on agentic loops.
-         balanced — qwen3.6:35b-a3b code+think (collapsed via /think) +
-                    gemma4:26b-a4b prose. 2026-vintage frontier-class at
-                    MoE-3B/4B-active decode speed.
+                    think. MoE models; fastest token generation, needs 48+ GB.
+         balanced — qwen3.6:35b-a3b code+think + gemma4:26b-a4b prose.
+                    MoE at frontier-class quality, needs 48+ GB.
          smart    — qwen3.6:27b dense code+think + gemma4:31b dense prose.
-                    Highest single-shot quality, ~5× slower decode. Use
-                    for one-shot architecture/debug, not tool loops. */ -}}
-{{- $localProfile := promptStringOnce . "localProfile" "Local model profile (fast | balanced | smart)" "balanced" -}}
+                    Highest single-shot quality; needs Chrome closed on 32 GB,
+                    comfortable on 48+ GB. */ -}}
+{{- $profilePrompt := "Local model profile (lean | fast | balanced | smart)" -}}
+{{- if gt $totalRamGiB 0 -}}
+{{-   $profilePrompt = printf "Local model profile [%d GB detected, recommended: %s] (lean=14B fits anywhere | smart/fast/balanced=27-35B need 48+ GB for usable ctx)" $totalRamGiB $recommendedProfile -}}
+{{- end -}}
+{{- $localProfile := promptStringOnce . "localProfile" $profilePrompt $recommendedProfile -}}
 {{- $ollamaCode := "" -}}
 {{- $ollamaProse := "" -}}
 {{- $ollamaThink := "" -}}
-{{- if eq $localProfile "fast" -}}
+{{- if eq $localProfile "lean" -}}
+{{-   $ollamaCode  = "qwen2.5-coder:14b-q4_K_M" -}}
+{{-   $ollamaProse = "gemma3:12b-it-q4_K_M" -}}
+{{-   $ollamaThink = "qwen3:8b-q4_K_M" -}}
+{{- else if eq $localProfile "fast" -}}
 {{-   $ollamaCode  = "gemma4:26b-a4b-it-q4_K_M" -}}
 {{-   $ollamaProse = "gemma4:e4b-it-q4_K_M" -}}
 {{-   $ollamaThink = "qwen3.6:35b-a3b-q4_K_M" -}}
@@ -35,6 +65,53 @@
 {{-   $ollamaProse = "gemma4:26b-a4b-it-q4_K_M" -}}
 {{-   $ollamaThink = "qwen3.6:35b-a3b-q4_K_M" -}}
 {{- end -}}
+
+{{- /* Compute safe Ollama context window from total RAM + profile.
+     Formula: (total_ram - headroom - model_weights) * tokens_per_gib
+     Headroom is per-profile (the user's implicit OS-overhead budget):
+       lean  45% — apps stay open, browsers running. Always-fits profile.
+       smart 30% — focused session, Chrome closed. User commits to
+                   resource management when picking smart.
+       fast/balanced 35% — MoE on 48+ GB, some app management expected.
+     tokens_per_gib derived from KV cache rate per profile:
+       lean  (14B dense):    ~0.25 MB/token = 4000 tokens/GiB
+       smart (27B dense):    ~0.41 MB/token = 2400 tokens/GiB
+       fast/balanced (MoE):  ~0.18 MB/token = 5600 tokens/GiB
+     Result is capped [2048, 32768]. Bootstrap warns if < 4096.
+     Zero totalRamGiB (detection failed) → fall back to 20000. */ -}}
+{{- $ollamaNumCtx := 20000 -}}
+{{- if gt $totalRamGiB 0 -}}
+{{-   $ollamaWeightsGiB := 9 -}}
+{{-   $tokensPerGiB := 4000 -}}
+{{-   $headroomPct := 45 -}}
+{{- /* smart's prose lane is gemma4:31b (~20 GiB), bigger than the
+       27B code/think model. Use the largest as the constraint so none
+       of the three lanes OOMs when its derived model loads. */ -}}
+{{-   if eq $localProfile "smart" -}}
+{{-     $ollamaWeightsGiB = 20 -}}
+{{-     $tokensPerGiB = 2400 -}}
+{{-     $headroomPct = 30 -}}
+{{-   else if or (eq $localProfile "fast") (eq $localProfile "balanced") -}}
+{{-     $ollamaWeightsGiB = 18 -}}
+{{-     $tokensPerGiB = 5600 -}}
+{{-     $headroomPct = 35 -}}
+{{-   end -}}
+{{-   $headroomGiB := div (mul $totalRamGiB $headroomPct) 100 -}}
+{{-   $kvGiB := sub (sub $totalRamGiB $headroomGiB) $ollamaWeightsGiB -}}
+{{-   $computed := mul $kvGiB $tokensPerGiB -}}
+{{-   $ollamaNumCtx = max 2048 (min 32768 $computed) -}}
+{{- end -}}
+
+{{- /* Derived model names embed the computed context window via Modelfile.
+     Bootstrap pulls .ollamaBase.* and creates .ollama.* via
+       ollama create <derived> -f <(echo "FROM <base>\nPARAMETER num_ctx N")
+     Naming convention: <base>-ctx<N>k where N = round(ollamaNumCtx / 1000).
+     Modelfile is the recommended persistence path per Ollama docs — env
+     vars (OLLAMA_CONTEXT_LENGTH) are unreliable; some models override them. */ -}}
+{{- $ctxK := div $ollamaNumCtx 1000 -}}
+{{- $codeDerived  := printf "%s-ctx%dk" $ollamaCode  $ctxK -}}
+{{- $proseDerived := printf "%s-ctx%dk" $ollamaProse $ctxK -}}
+{{- $thinkDerived := printf "%s-ctx%dk" $ollamaThink $ctxK -}}
 {{- $cloudSonnet := "claude-sonnet-4-6" -}}
 {{- $cloudOpus := "claude-opus-4-7" -}}
 {{- $cloudHaiku := "claude-haiku-4-5-20251001" -}}
@@ -96,7 +173,7 @@
        localPerfCtx below trivialCtx forces trivial requests cloud (most
        aggressive cloud bias); setting it above complexCtx is a no-op. */ -}}
 {{- $trivialCtx := 12000 -}}
-{{- $localPerfCtx := promptIntOnce (get . "routing" | default dict) "localPerfCtx" "Soft ctx ceiling above which local is too slow — push to cloud (-1 to disable)" 20000 -}}
+{{- $localPerfCtx := promptIntOnce (get . "routing" | default dict) "localPerfCtx" (printf "Soft ctx ceiling — route above this to cloud (-1 to disable). Hardware-derived default: %d tokens" $ollamaNumCtx) $ollamaNumCtx -}}
 {{- $complexCtx := 60000 -}}
 {{- /* Subagent names sniffed from request system prompts purely for audit
        logging (subagent=<name> field on log lines). Does not affect
@@ -134,6 +211,8 @@ sourceDir = {{ .chezmoi.sourceDir | quote }}
     logPrompt = {{ $logPrompt }}
     localProfile = {{ $localProfile | quote }}
     cloudAuth = {{ $cloudAuth | quote }}
+    totalRamGiB = {{ $totalRamGiB }}
+    ollamaNumCtx = {{ $ollamaNumCtx }}
 
 [data.routing]
     trivialCtx     = {{ $trivialCtx }}
@@ -142,7 +221,18 @@ sourceDir = {{ .chezmoi.sourceDir | quote }}
     knownSubagents = {{ $knownSubagents | toJson }}
 
 [data.ollama]
-    code  = {{ $ollamaCode | quote }}
+    # Derived names: what config.json/router.js/audit/agent-core reference.
+    # These are the Modelfile-tagged variants the bootstrap creates with
+    # PARAMETER num_ctx baked in.
+    code  = {{ $codeDerived  | quote }}
+    prose = {{ $proseDerived | quote }}
+    think = {{ $thinkDerived | quote }}
+
+[data.ollamaBase]
+    # Base names: what bootstrap pulls from the Ollama registry. The
+    # bootstrap then runs `ollama create <derived> -f Modelfile` to
+    # produce the derived name with the computed num_ctx.
+    code  = {{ $ollamaCode  | quote }}
     prose = {{ $ollamaProse | quote }}
     think = {{ $ollamaThink | quote }}
 
