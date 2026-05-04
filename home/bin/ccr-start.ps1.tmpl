@@ -78,10 +78,20 @@ if (-not $ccsCmd) {
 if ($ccsCmd) {
     $ts = (Get-Date).ToString('o')
     Add-Content $logFile "$ts [supervisor] starting CLIProxy (ccs-pro mode)"
-    & $ccsCmd cliproxy start 2>&1 | ForEach-Object { Add-Content $logFile "$((Get-Date).ToString('o')) [cliproxy] $_" }
+    # Assign to variable, not pipe. Piping through ForEach-Object with
+    # $ErrorActionPreference='Stop' propagates any scriptblock throw up to
+    # the supervisor and kills it. Assignment never throws on external processes.
+    $ccsOut  = & $ccsCmd cliproxy start 2>&1
+    # $LASTEXITCODE is null for .cmd wrappers in some Scheduled Task contexts;
+    # treat null as success to avoid false "cloud tier unavailable" warnings.
+    $ccsExit = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
+    Add-Content $logFile "$((Get-Date).ToString('o')) [cliproxy] exit=$ccsExit $($ccsOut -join ' | ')"
+    if ($ccsExit -ne 0) {
+        Add-Content $logFile "$((Get-Date).ToString('o')) [supervisor] WARNING: CCS start exited $ccsExit - cloud tier may be unavailable"
+    }
 } else {
     $ts = (Get-Date).ToString('o')
-    Add-Content $logFile "$ts [supervisor] WARNING: ccs not found — cloud tier unavailable. Run: ccs claude --auth"
+    Add-Content $logFile "$ts [supervisor] WARNING: ccs not found - cloud tier unavailable. Run: ccs claude --auth"
 }
 {{- end }}
 
