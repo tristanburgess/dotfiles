@@ -24,21 +24,21 @@ All config changes (shell, kitty, Claude, mise, etc.) go in the chezmoi source a
 {{ if (get . "useCcr" | default true) -}}
 # Model Tiering
 
-A local proxy (`claude-code-router` on `127.0.0.1:3456`) routes each Claude Code call by requested model name, request shape, and estimated context size:
+A local proxy (`claude-code-router` on `127.0.0.1:3456`) routes each Claude Code call by requested model name, request shape, and estimated context size. Active local profile: **`{{ .localProfile }}`** (set at chezmoi init via the `localProfile` flag — `fast` | `balanced` | `smart`; bump models by editing `~/.config/chezmoi/chezmoi.toml` then `chezmoi apply`).
 
 | Tier | Backend | Models | Triggers |
 |------|---------|--------|----------|
-| Local | Ollama (Vulkan, AMD 890M) | `qwen3-coder:30b`, `gemma3:27b`, `qwen3:30b-thinking` | `model: haiku`. Trivial sonnet/opus. Borderline (with `defaultLocal`). Thinking field (only when `cloudThinking=false` and ctx ≤ 60K). Skill local-mode toggle. |
-| Cloud Sonnet | Anthropic API | `claude-sonnet-4-6` | Main session default. `model: sonnet`. Long context (>60K). Reasoning verbs. `webSearch`. |
-| Cloud Opus | Anthropic API | `claude-opus-4-7` | `model: opus` for non-trivial requests. Any thinking-field request when `cloudThinking=true` (default). |
+| Local | Ollama (Vulkan, AMD 890M) | `{{ .ollama.code }}` (code), `{{ .ollama.prose }}` (prose), `{{ .ollama.think }}` (think) | `model: haiku`. Trivial sonnet/opus. Borderline (with `defaultLocal`). Thinking field (only when `cloudThinking=false` and ctx ≤ 60K). Skill local-mode toggle. |
+| Cloud Sonnet | Anthropic API | `{{ .cloud.sonnet }}` | Main session default. `model: sonnet`. Long context (>60K). Reasoning verbs. `webSearch`. |
+| Cloud Opus | Anthropic API | `{{ .cloud.opus }}` | `model: opus` for non-trivial requests. Any thinking-field request when `cloudThinking=true` (default). |
 
-Local requests route to one of three lanes based on content signals:
+Local requests route to one of three lanes based on content signals (lanes can collapse to the same model under `balanced`/`smart` profiles):
 
 | Local model | Lane | Signals |
 |-------------|------|---------|
-| `qwen3-coder:30b` | code | `.go` `.py` `.ts` etc. file refs; tool-heavy work; default lane; any request with `tools` (gemma3 lacks tool support) |
-| `gemma3:27b` | prose | `.md` `.txt` refs, commit messages, Slack, design docs — only when request has no `tools` field |
-| `qwen3:30b-thinking` | think | thinking-field requests when `cloudThinking=false` and ctx ≤ 60K |
+| `{{ .ollama.code }}` | code | `.go` `.py` `.ts` etc. file refs; tool-heavy work; default lane; any request with `tools` (prose lane lacks tool support) |
+| `{{ .ollama.prose }}` | prose | `.md` `.txt` refs, commit messages, Slack, design docs — only when request has no `tools` field |
+| `{{ .ollama.think }}` | think | thinking-field requests when `cloudThinking=false` and ctx ≤ 60K |
 
 **Thinking routing** is gated by the `cloudThinking` chezmoi flag (default `true`). When `true`, every thinking-field request goes to cloud Opus. When `false`, small-ctx thinking goes to the local think lane and only long-ctx thinking escapes to Opus.
 
@@ -46,27 +46,35 @@ Inline override keywords (anywhere in the last user message):
 
 | Keyword | Routes to | Use when |
 |---------|-----------|----------|
-| `@code` | local `qwen3-coder:30b` | force local code lane |
-| `@prose` | local `gemma3:27b` | force local prose lane |
-| `@think` | local `qwen3:30b-thinking` | force local think lane |
-| `@cloudcode` | cloud `claude-sonnet-4-6` | force cloud Sonnet for code/general work |
-| `@cloudprose` | cloud `claude-sonnet-4-6` | force cloud Sonnet for prose |
-| `@cloudthink` | cloud `claude-opus-4-7` | force cloud Opus reasoning (big plans, hard analysis) |
+| `@code` | local `{{ .ollama.code }}` | force local code lane |
+| `@prose` | local `{{ .ollama.prose }}` | force local prose lane |
+| `@think` | local `{{ .ollama.think }}` | force local think lane |
+| `@cloudcode` | cloud `{{ .cloud.sonnet }}` | force cloud Sonnet for code/general work |
+| `@cloudprose` | cloud `{{ .cloud.sonnet }}` | force cloud Sonnet for prose |
+| `@cloudthink` | cloud `{{ .cloud.opus }}` | force cloud Opus reasoning (big plans, hard analysis) |
 
 **Subagent routing is automatic — leave the model name unset.** Plan sets `thinking`, so the router picks cloud Opus (default) or local think (`cloudThinking=false` + ctx ≤ 60K) regardless of model. Explore, cavecrew-*, and prose-review inherit `haiku` and route local.
 
-**In Opus thinking sessions, delegate to subagents.** Direct `Read` / `Bash` / `Grep` / `Edit` calls stay on the main Opus chain and burn Opus tokens. Subagents spawn fresh haiku chains that land on local `qwen3-coder:30b`. Reach for `Agent(Explore)` for file reads and greps, `Agent(cavecrew-investigator)` for code-locator tables, `Agent(cavecrew-builder)` for 1-2 file edits, `Agent(cavecrew-reviewer)` for diff reviews.
+**In Opus thinking sessions, delegate to subagents.** Direct `Read` / `Bash` / `Grep` / `Edit` calls stay on the main Opus chain and burn Opus tokens. Subagents spawn fresh haiku chains that land on local `{{ .ollama.code }}`. Reach for `Agent(Explore)` for file reads and greps, `Agent(cavecrew-investigator)` for code-locator tables, `Agent(cavecrew-builder)` for 1-2 file edits, `Agent(cavecrew-reviewer)` for diff reviews.
 
 **Skill local-mode toggle** (for Notion-heavy maintenance work via `/health`, `/guitar-tutor` etc.):
 
 ```
-/model ollama,gemma3:27b                # switch main session to local (prose lane)
-/model ollama,qwen3-coder:30b           # switch main session to local (code lane)
-/model ollama,qwen3:30b-thinking        # switch main session to local (think lane)
-/model anthropic,claude-sonnet-4-6      # switch back to cloud
+/model ollama,{{ .ollama.prose }}    # switch main session to local (prose lane)
+/model ollama,{{ .ollama.code }}     # switch main session to local (code lane)
+/model ollama,{{ .ollama.think }}    # switch main session to local (think lane)
+/model anthropic,{{ .cloud.sonnet }} # switch back to cloud
 ```
 
 Use cloud Sonnet for cross-log analysis, training-plan design, schema restructures, and prose generation. Use local for mechanical row-level Notion edits and bulk operations.
+
+**Audit routing decisions** with `claude-code-router-audit` (last 24h by default; supports `1h` / `7d` / `--since "..."` windows). Reads from journalctl on Linux, from the rotating router.log file on Windows.
+
+{{ if eq (get . "cloudAuth" | default "apikey") "ccs-pro" -}}
+**Cloud auth: ccs-pro mode.** Cloud-tier requests route through CCS/CLIProxy (`127.0.0.1:8317`) using your Claude.ai Pro/Max OAuth token — no API key required. If cloud calls fail with auth errors, run `ccs claude --auth` to refresh. To switch back to API-key mode, set `cloudAuth = "apikey"` in `~/.config/chezmoi/chezmoi.toml` then `chezmoi apply`.
+{{- else -}}
+**Cloud auth: apikey mode.** Cloud-tier requests route directly to `api.anthropic.com` via `ANTHROPIC_API_KEY` in `~/.claude-code-router/secrets.env`. To switch to Pro/Max OAuth routing, set `cloudAuth = "ccs-pro"` in `~/.config/chezmoi/chezmoi.toml` then `chezmoi apply`.
+{{- end }}
 {{- end }}
 
 # External-Facing Text

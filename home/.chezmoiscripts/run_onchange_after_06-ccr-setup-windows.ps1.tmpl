@@ -1,0 +1,98 @@
+{{- if and (eq .chezmoi.os "windows") .installClaude (get . "useCcr" | default true) (ne (get . "cloudAuth" | default "apikey") "ccs-pro") -}}
+# Windows parallel of run_onchange_after_06-ccr-setup.sh.tmpl (Linux).
+# Prompts for the Anthropic API key and writes it to secrets.env, which
+# ccr-start.ps1 loads into the supervisor process env on startup.
+# Re-runs whenever this script's rendered content changes.
+
+$ErrorActionPreference = 'Stop'
+
+$secretsDir  = Join-Path $env:USERPROFILE '.claude-code-router'
+$secretsFile = Join-Path $secretsDir 'secrets.env'
+
+# Ensure directory exists with user-only ACL (mirrors chmod 700 on Linux).
+# icacls instead of Set-Acl: SetAccessRuleProtection triggers ACCESS_SYSTEM_SECURITY
+# (SACL) in PowerShell's Set-Acl even for pure DACL changes, requiring
+# SeSecurityPrivilege. icacls uses only WRITE_DAC which the owner always holds.
+if (-not (Test-Path $secretsDir)) {
+    New-Item -ItemType Directory -Path $secretsDir -Force | Out-Null
+}
+$null = icacls $secretsDir /inheritance:r /grant:r "${env:USERNAME}:(OI)(CI)F" 2>&1
+
+# Already set up - verify key looks valid and exit.
+if (Test-Path $secretsFile) {
+    $existing = Get-Content $secretsFile -ErrorAction SilentlyContinue |
+        Where-Object { $_ -match '^ANTHROPIC_API_KEY=sk-ant-api03-' }
+    if ($existing) {
+        Write-Host "CCR secrets already configured at $secretsFile"
+        exit 0
+    }
+}
+
+# Non-interactive context (CI, scheduled task without console) - skip prompt.
+if (-not [Environment]::UserInteractive) {
+    Write-Warning @"
+
+  CCR secrets not configured.
+  Re-run chezmoi apply from an interactive PowerShell session to set up the key.
+
+"@
+    exit 0
+}
+
+Write-Host @"
+
+  +- claude-code-router setup ------------------------------------+
+  |                                                               |
+  |  CCR needs an Anthropic API key to route cloud-tier requests. |
+  |  Use a raw API key, NOT the OAuth token from 'claude login'.  |
+  |                                                               |
+  |  1. Open: https://console.anthropic.com/settings/keys         |
+  |  2. Click "Create Key", name it "claude-code-router"          |
+  |  3. Copy the value                                            |
+  |  4. Paste below (input hidden)                                |
+  |                                                               |
+  +---------------------------------------------------------------+
+
+"@
+
+$maxAttempts = 3
+$attempt = 0
+$key = ''
+
+while ($attempt -lt $maxAttempts) {
+    $attempt++
+    $secure = Read-Host 'API key' -AsSecureString
+    $plain  = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+                  [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
+    $plain  = $plain.Trim()
+
+    if (-not $plain) {
+        Write-Warning "  empty input - try again or Ctrl-C to abort."
+        continue
+    }
+    if ($plain -match '^sk-ant-api03-') {
+        $key = $plain; break
+    }
+    if ($plain -match '^sk-ant-oat01-') {
+        Write-Warning "  That's an OAuth token. Generate a raw API key at https://console.anthropic.com/settings/keys"
+        continue
+    }
+    Write-Warning "  Expected sk-ant-api03-... Try again."
+}
+
+if (-not $key) {
+    Write-Error "Aborting: no valid key after $maxAttempts attempts."
+    exit 1
+}
+
+# Write atomically to a temp file, then move - mirrors the Linux mktemp approach.
+$tmp = $secretsFile + '.tmp'
+Set-Content -Path $tmp -Value "ANTHROPIC_API_KEY=$key" -NoNewline:$false
+
+# Lock down the file to current user only before moving into place.
+$null = icacls $tmp /inheritance:r /grant:r "${env:USERNAME}:F" 2>&1
+
+Move-Item -Path $tmp -Destination $secretsFile -Force
+
+Write-Host "Written $secretsFile (user-only ACL)."
+{{- end -}}

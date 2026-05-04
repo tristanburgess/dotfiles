@@ -65,6 +65,15 @@
        Toggle via chezmoi.toml then `chezmoi apply` (re-renders the
        systemd unit + restarts the service via run_onchange). */ -}}
 {{- $logPrompt := promptBoolOnce . "logPrompt" "Include user-prompt snippets in ccr router audit logs (CCR_LOG_PROMPT)" false -}}
+{{- /* Cloud authentication mode:
+       apikey  (default): route cloud-tier requests directly to api.anthropic.com
+                          using ANTHROPIC_API_KEY from secrets.env.
+       ccs-pro:           route cloud-tier requests through a local CCS/CLIProxy
+                          daemon (127.0.0.1:8317) which injects your Claude.ai
+                          Pro/Max OAuth token. No API key needed.
+                          Requires: npm install -g @kaitranntt/ccs + ccs claude --auth
+                          Not available on WSL (WSL uses Windows-host CCR instead). */ -}}
+{{- $cloudAuth := promptStringOnce . "cloudAuth" "Cloud auth mode (apikey | ccs-pro)" "apikey" -}}
 {{- /* Routing ctx thresholds — three tiers, ordered:
          trivialCtx  ≤  localPerfCtx  <  complexCtx
 
@@ -124,6 +133,7 @@ sourceDir = {{ .chezmoi.sourceDir | quote }}
     cloudThinking = {{ $cloudThinking }}
     logPrompt = {{ $logPrompt }}
     localProfile = {{ $localProfile | quote }}
+    cloudAuth = {{ $cloudAuth | quote }}
 
 [data.routing]
     trivialCtx     = {{ $trivialCtx }}
@@ -145,16 +155,17 @@ sourceDir = {{ .chezmoi.sourceDir | quote }}
     command = "nvim"
     args = ["-d", "{{ "{{" }} .Destination {{ "}}" }}", "{{ "{{" }} .Source {{ "}}" }}", "{{ "{{" }} .Target {{ "}}" }}"]
 
-{{- if eq .chezmoi.os "windows" }}
-
-# Run .sh scripts via Git Bash on Windows (body-wrapped chezmoiscripts).
+# Cross-platform .sh interpreter binding. Required on both OSes for two
+# reasons:
+#   1. Windows: chezmoi otherwise fork/exec's .sh files and Windows rejects
+#      with "%1 is not a valid Win32 application".
+#   2. Both OSes: chezmoi only strips a script extension from the target
+#      filename when an interpreter is configured for it. We rely on this
+#      stripping for `modify_settings.json.sh.tmpl` to resolve to target
+#      `settings.json` (not `settings.json.sh`). Configuring [interpreters.sh]
+#      on Linux too is what fixes the long-running cross-platform regression
+#      where the file landed at `~/.claude/settings.json.sh` on Linux and
+#      `~/.claude/settings` on Windows (the latter from a since-removed
+#      [interpreters.json] block that stripped the wrong extension).
 [interpreters.sh]
-    command = 'C:/Program Files/Git/bin/bash.exe'
-
-# modify_settings.json.tmpl is a bash script with .json script extension
-# (since the destination is ~/.claude/settings.json). Without this mapping,
-# chezmoi tries to fork/exec it directly and Windows rejects with
-# "%1 is not a valid Win32 application".
-[interpreters.json]
-    command = 'C:/Program Files/Git/bin/bash.exe'
-{{- end }}
+    command = {{ if eq .chezmoi.os "windows" }}'C:/Program Files/Git/bin/bash.exe'{{ else }}'/bin/bash'{{ end }}

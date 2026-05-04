@@ -1,0 +1,98 @@
+{{- if and (eq .chezmoi.os "windows") .installClaude (get . "useCcr" | default true) -}}
+# Register/refresh the Scheduled Task that auto-launches the ccr supervisor
+# (~/bin/ccr-start.ps1) at logon. Mirrors run_onchange_after_08-ccr-service.sh.tmpl
+# (Linux systemd unit). Re-runs whenever this script's rendered content
+# changes - so flipping logPrompt or bumping the wrapper triggers a clean
+# stop+restart, picking up the new wrapper and config.
+
+$ErrorActionPreference = 'Stop'
+
+$taskName = 'ClaudeCodeRouter'
+$wrapper  = Join-Path $env:USERPROFILE 'bin\ccr-start.ps1'
+
+if (-not (Test-Path $wrapper)) {
+    Write-Error "ccr-start.ps1 missing at $wrapper - run chezmoi apply again."
+    exit 1
+}
+
+# Stop + unregister any existing instance so we always reinstall against
+# the current wrapper/config. Stop-ScheduledTask terminates the running
+# task tree (supervisor PowerShell + child ccr process).
+$existing = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+if ($existing) {
+    if ($existing.State -eq 'Running') {
+        Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    }
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+}
+
+$action = New-ScheduledTaskAction `
+    -Execute 'powershell.exe' `
+    -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$wrapper`""
+
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+
+# Settings parity with systemd: start when available even if missed,
+# restart up to 3 times on failure with a 1m gap, ignore battery state.
+$settings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable `
+    -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) `
+    -ExecutionTimeLimit (New-TimeSpan -Seconds 0)  # no time cap on long-running supervisor
+
+# Run as the current interactive user (non-elevated). Loopback ccr only
+# binds 127.0.0.1, no admin needed.
+$principal = New-ScheduledTaskPrincipal `
+    -UserId $env:USERNAME `
+    -LogonType Interactive `
+    -RunLevel Limited
+
+Register-ScheduledTask -TaskName $taskName `
+    -Action $action -Trigger $trigger -Settings $settings -Principal $principal `
+    -Description 'claude-code-router supervisor with rotating audit log (~/.claude-code-router/router.log)' | Out-Null
+
+Write-Host "Registered Scheduled Task: $taskName"
+
+Start-ScheduledTask -TaskName $taskName
+Write-Host "Started $taskName"
+
+# Probe up to 10s for the proxy to come up on 127.0.0.1:3456 - same shape
+# as the curl probe in the Linux ccr-service script.
+$up = $false
+for ($i = 0; $i -lt 20; $i++) {
+    try {
+        $tcp = New-Object Net.Sockets.TcpClient
+        $tcp.Connect('127.0.0.1', 3456)
+        $tcp.Close()
+        $up = $true
+        break
+    } catch {
+        Start-Sleep -Milliseconds 500
+    }
+}
+if ($up) {
+    Write-Host "claude-code-router is up on 127.0.0.1:3456"
+} else {
+    Write-Warning "claude-code-router did not respond on 127.0.0.1:3456 within ~10s. Check ~/.claude-code-router/router.log"
+}
+
+# Sanity-check secrets.env mirrors the Linux script.
+$secretsFile = Join-Path $env:USERPROFILE '.claude-code-router\secrets.env'
+if (-not (Test-Path $secretsFile) -or
+    -not (Select-String -Path $secretsFile -Pattern '^ANTHROPIC_API_KEY=.+' -Quiet -ErrorAction SilentlyContinue)) {
+    Write-Warning "$secretsFile missing or empty - cloud requests will 401. Re-run chezmoi apply interactively to set the key."
+}
+{{- else if eq .chezmoi.os "windows" -}}
+# useCcr=false teardown - remove the Scheduled Task. Mirrors the Linux
+# branch (systemctl stop/disable) when the flag flips off.
+$ErrorActionPreference = 'Continue'
+$taskName = 'ClaudeCodeRouter'
+$existing = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+if ($existing) {
+    if ($existing.State -eq 'Running') {
+        Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    }
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+    Write-Host "Removed Scheduled Task: $taskName"
+}
+{{- end -}}

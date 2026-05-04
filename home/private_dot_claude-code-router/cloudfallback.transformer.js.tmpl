@@ -1,10 +1,11 @@
-// CCR custom transformer: capture cloud 429 / 5xx and write a sidecar state
-// file so the router (router.js) can force-route the affected model family
-// to the local Ollama lane until the rate-limit window passes.
+// CCR custom transformer: capture cloud 429 / 401 / 5xx and write a sidecar
+// state file so the router (router.js) can force-route the affected model
+// family to the local Ollama lane until the window passes.
 //
 // Wired in via config.json:
 //   transformers: [{ path: "<homeDir>/.claude-code-router/cloudfallback.transformer.js" }]
-//   Providers[].transformer.use: ["Anthropic", "cloudfallback"]
+//   Providers[].transformer.use: ["Anthropic", "cloudfallback"]   (apikey mode)
+//   Providers[].transformer.use: ["cloudfallback"]                 (ccs-pro mode)
 //
 // State file: ~/.claude-code-router/cloud-status.json
 //   { sonnet: { until: <epoch_ms> }, opus: {...}, haiku: {...} }
@@ -12,6 +13,7 @@
 // TTL strategy:
 //   - 429 with Retry-After header: until = now + Retry-After + 5s slack
 //   - 429 without Retry-After:     until = now + 60min  (5h-quota class default)
+//   - 401 (OAuth refresh failure):  until = now + 2min  (short — user can re-auth)
 //   - 5xx (provider outage):       exponential backoff per family —
 //                                  60s → 5m → 25m → 60m cap, resets on 2xx
 //
@@ -29,6 +31,7 @@ const STATUS_FILE = path.join(
 
 const FAMILIES = ["sonnet", "opus", "haiku"];
 const DEFAULT_429_TTL_S = 60 * 60;   // header-less 429 fallback
+const DEFAULT_401_TTL_S = 2 * 60;    // OAuth refresh failure — short, user can re-auth
 const BACKOFF_INIT_S    = 60;
 const BACKOFF_MULT      = 5;
 const BACKOFF_CAP_S     = 60 * 60;
@@ -104,6 +107,10 @@ class CloudFallbackTransformer {
       const ttl = (ra > 0 ? ra : DEFAULT_429_TTL_S) + 5;
       setDown(family, ttl, ra > 0 ? `429-retry-after=${ra}` : "429-no-header");
       backoff[family] = BACKOFF_INIT_S;
+    } else if (status === 401) {
+      // OAuth token expired / refresh failed (ccs-pro mode). Short TTL so
+      // requests degrade to local while user runs `ccs claude --auth`.
+      setDown(family, DEFAULT_401_TTL_S, "401-auth-expired");
     } else if (status >= 500 && status < 600) {
       const ttl = backoff[family];
       setDown(family, ttl, `${status}-backoff`);

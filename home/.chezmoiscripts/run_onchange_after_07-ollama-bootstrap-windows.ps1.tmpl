@@ -1,0 +1,123 @@
+{{- if and (eq .chezmoi.os "windows") .installClaude (get . "useCcr" | default true) -}}
+# Windows-side mirror of run_onchange_after_07-ollama-bootstrap.sh.tmpl
+# (Linux). Winget installs Ollama as a Windows service in
+# run_after_00-winget-packages.ps1.tmpl; this script pulls the three lane
+# models for the active localProfile so the CCR local lanes have
+# something to route to. Re-runs whenever this script's rendered content
+# changes - i.e., whenever the active profile flips and the model list
+# changes.
+#
+# Stale-tag cleanup mirrors the Linux script: a state file tracks the set
+# of tags this script has pulled, so on profile switch the previous
+# profile's tags can be flagged for removal. User-pulled experimental
+# tags are never tracked, so they're never eligible.
+
+$ErrorActionPreference = 'Stop'
+
+$codeModel  = '{{ .ollama.code }}'
+$proseModel = '{{ .ollama.prose }}'
+$thinkModel = '{{ .ollama.think }}'
+
+# Resolve ollama.exe - prefer PATH, fall back to the winget install path.
+$ollamaCmd = (Get-Command ollama -ErrorAction SilentlyContinue).Source
+if (-not $ollamaCmd) {
+    $candidates = @(
+        "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe",
+        "$env:ProgramFiles\Ollama\ollama.exe"
+    )
+    foreach ($c in $candidates) { if (Test-Path $c) { $ollamaCmd = $c; break } }
+}
+if (-not $ollamaCmd) {
+    Write-Warning "ollama.exe not found - winget install may not have completed yet. Re-run chezmoi apply after the next reboot or run: winget install Ollama.Ollama"
+    exit 0
+}
+
+# Wait for daemon (max ~30s). Winget installs Ollama as an auto-start
+# Windows service, so the daemon is usually already up.
+Write-Host -NoNewline "Waiting for Ollama daemon..."
+$ready = $false
+for ($i = 0; $i -lt 30; $i++) {
+    try {
+        Invoke-WebRequest -Uri 'http://127.0.0.1:11434/api/tags' -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop | Out-Null
+        $ready = $true; break
+    } catch {
+        Start-Sleep -Seconds 1
+        Write-Host -NoNewline '.'
+    }
+}
+if (-not $ready) {
+    Write-Warning " not responding on 127.0.0.1:11434. Skipping model pulls."
+    exit 0
+}
+Write-Host " ready."
+
+# Inventory pulled tags. `ollama list` columns: NAME, ID, SIZE, MODIFIED.
+$installed = @()
+try {
+    $installed = & $ollamaCmd list 2>$null |
+        Select-Object -Skip 1 |
+        ForEach-Object { ($_ -split '\s+')[0] } |
+        Where-Object { $_ }
+} catch { }
+
+function Pull-IfMissing($model) {
+    if ($installed -contains $model) {
+        Write-Host "Already pulled: $model"
+        return
+    }
+    Write-Host "Pulling $model... (this can take several minutes)"
+    & $ollamaCmd pull $model
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "ollama pull $model exited $LASTEXITCODE - model may not exist on the registry yet."
+    }
+}
+
+Pull-IfMissing $codeModel
+Pull-IfMissing $proseModel
+Pull-IfMissing $thinkModel
+
+# Stale-tag cleanup: track the set of tags this script deployed last time
+# and prompt to remove the diff on profile change. State file lives under
+# %LOCALAPPDATA% (per-user, persistent across reboots, not roamed).
+$stateDir  = Join-Path $env:LOCALAPPDATA 'dotfiles'
+$stateFile = Join-Path $stateDir 'ollama-managed-tags'
+if (-not (Test-Path $stateDir)) { New-Item -ItemType Directory -Path $stateDir -Force | Out-Null }
+
+$activeTags = @($codeModel, $proseModel, $thinkModel) | Sort-Object -Unique
+$prevTags = @()
+if (Test-Path $stateFile) {
+    $prevTags = @(Get-Content $stateFile | Where-Object { $_ -and $_.Trim() })
+}
+$stale = @($prevTags | Where-Object { $activeTags -notcontains $_ })
+
+if ($stale.Count -gt 0) {
+    Write-Host ""
+    Write-Host "Profile change detected. Tags from previous run no longer in active '{{ .localProfile }}' profile:"
+    foreach ($t in $stale) { Write-Host "  - $t" }
+
+    # Interactive removal prompt. Read-Host returns empty in non-interactive
+    # contexts (CI / chezmoi apply piped) - treat as 'no'.
+    $ans = ''
+    if ([Environment]::UserInteractive) {
+        $ans = Read-Host "Remove these stale tags? [y/N]"
+    }
+    if ($ans -match '^[yY]') {
+        foreach ($t in $stale) {
+            try {
+                & $ollamaCmd rm $t 2>$null
+                if ($LASTEXITCODE -eq 0) { Write-Host "Removed $t" }
+            } catch { }
+        }
+    } else {
+        Write-Host "Skipped. Run manually: ollama rm $($stale -join ' ')"
+    }
+}
+
+Set-Content -Path $stateFile -Value $activeTags
+
+Write-Host ""
+Write-Host "Ollama ready. Active profile: {{ .localProfile }}. Models: $codeModel, $proseModel, $thinkModel."
+{{- else if eq .chezmoi.os "windows" -}}
+# useCcr=false teardown branch - stop here, do not pull models.
+Write-Host "useCcr=false - skipping Ollama model bootstrap on Windows."
+{{- end -}}

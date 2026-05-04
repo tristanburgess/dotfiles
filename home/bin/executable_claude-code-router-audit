@@ -1,10 +1,17 @@
 #!/bin/bash
 set -euo pipefail
 
-# claude-code-router-audit — summarize claude-code-router routing decisions from journalctl.
+# claude-code-router-audit — summarize claude-code-router routing decisions.
 #
-# Reads [router] log lines from the claude-code-router user service and
-# prints histograms designed for tuning chezmoi flags (localPerfCtx,
+# Source by platform:
+#   Linux baremetal — journalctl --user -u claude-code-router  (systemd unit)
+#   Windows / WSL / macOS — ~/.claude-code-router/router.log{,.1}  (rotating
+#                            log written by the ~/bin/ccr-start.ps1 supervisor
+#                            on Windows; supervisor prefixes each line with an
+#                            ISO-8601 timestamp so --since filtering works
+#                            without journalctl)
+#
+# Prints histograms designed for tuning chezmoi flags (localPerfCtx,
 # defaultLocal, cloudThinking).
 #
 # Usage:
@@ -32,11 +39,50 @@ case "${1:-}" in
         ;;
 esac
 
-raw=$(journalctl --user -u claude-code-router -g '\[router\]' \
-    --since "$since" --no-pager --output=cat 2>/dev/null || true)
+# Pick source based on platform. uname -s returns "Linux" on bare-metal +
+# WSL, "MINGW64_NT-*" / "MSYS_NT-*" on Git Bash, "Darwin" on macOS.
+uname_s=$(uname -s 2>/dev/null || echo unknown)
+use_journal=0
+if [ "$uname_s" = "Linux" ] && command -v journalctl >/dev/null 2>&1 \
+   && systemctl --user list-unit-files claude-code-router.service >/dev/null 2>&1; then
+    use_journal=1
+fi
+
+if [ "$use_journal" = "1" ]; then
+    raw=$(journalctl --user -u claude-code-router -g '\[router\]' \
+        --since "$since" --no-pager --output=cat 2>/dev/null || true)
+else
+    # File-source fallback. Convert --since to epoch and filter inline.
+    LOG_DIR="${HOME}/.claude-code-router"
+    since_epoch=$(date -d "$since" +%s 2>/dev/null || echo 0)
+    # Concatenate rotated + current log (oldest first), drop missing files
+    # silently. awk parses the leading ISO timestamp written by the
+    # PowerShell supervisor; lines without a parseable timestamp are kept
+    # defensively (better to over-include than silently drop).
+    raw=$(cat "$LOG_DIR/router.log.1" "$LOG_DIR/router.log" 2>/dev/null \
+        | awk -v se="$since_epoch" '
+            function iso2epoch(line,    ts) {
+                if (match(line, /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}/)) {
+                    ts = substr(line, RSTART, 19)
+                    gsub(/[-T:]/, " ", ts)
+                    return mktime(ts)
+                }
+                return 0
+            }
+            /\[router\]/ {
+                e = iso2epoch($0)
+                if (e == 0 || e >= se) {
+                    sub(/^[0-9T:.+-]+Z?[ \t]+/, "")  # strip leading timestamp
+                    print
+                }
+            }' || true)
+fi
 
 if [ -z "$raw" ]; then
     printf "No router decisions logged since: %s\n" "$since"
+    if [ "$use_journal" = "0" ]; then
+        printf "  (looked in %s/router.log{,.1})\n" "${HOME}/.claude-code-router"
+    fi
     exit 0
 fi
 

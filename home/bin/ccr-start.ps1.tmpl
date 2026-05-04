@@ -1,0 +1,107 @@
+{{- /*
+  Windows-side claude-code-router supervisor with rotating audit log.
+  Mirrors home/dot_config/systemd/user/claude-code-router.service.tmpl
+  (Linux) - loads secrets.env, launches `ccr start`, prefixes every line of
+  ccr stdout/stderr with an ISO-8601 timestamp, tees to ~/.claude-code-router/router.log,
+  and restarts on crash with a fixed backoff (matches systemd Restart=on-failure).
+
+  Rendered by chezmoi: the logPrompt flag toggles CCR_LOG_PROMPT on the
+  child env (parity with the systemd unit). All other knobs come from
+  the rendered ~/.claude-code-router/config.json + router.js.
+
+  Invoked by the Scheduled Task registered in
+  .chezmoiscripts/run_onchange_after_09-ccr-task-windows.ps1.tmpl.
+  Can also be run by hand for debugging:
+    powershell -NoProfile -ExecutionPolicy Bypass -File ~/bin/ccr-start.ps1
+*/ -}}
+$ErrorActionPreference = 'Stop'
+
+$ccrDir      = Join-Path $env:USERPROFILE '.claude-code-router'
+$logFile     = Join-Path $ccrDir 'router.log'
+$logPrev     = "$logFile.1"
+$secretsFile = Join-Path $ccrDir 'secrets.env'
+$maxLogBytes = 10MB
+
+if (-not (Test-Path $ccrDir)) { New-Item -ItemType Directory -Path $ccrDir -Force | Out-Null }
+
+# Rotate router.log if it grew past the cap. Single-step: drop the previous
+# .1 and rename current to .1. Audit script reads both.
+if ((Test-Path $logFile) -and ((Get-Item $logFile).Length -gt $maxLogBytes)) {
+    if (Test-Path $logPrev) { Remove-Item $logPrev -Force }
+    Move-Item $logFile $logPrev -Force
+}
+
+# Load secrets.env (KEY=VAL lines). Mirrors EnvironmentFile= in the systemd
+# unit. Lines starting with # and blank lines ignored.
+if (Test-Path $secretsFile) {
+    Get-Content $secretsFile | ForEach-Object {
+        if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
+            [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process')
+        }
+    }
+}
+
+{{ if get . "logPrompt" | default false -}}
+# logPrompt chezmoi flag - include truncated user-prompt snippets in router logs.
+$env:CCR_LOG_PROMPT = '1'
+{{- end }}
+
+# Resolve ccr launcher: prefer PATH, then Windows mise shim locations.
+# mise shims on Windows live under %LOCALAPPDATA%\mise\shims, not ~/.local.
+$ccrCmd = (Get-Command ccr -ErrorAction SilentlyContinue).Source
+if (-not $ccrCmd) {
+    $candidates = @(
+        (Join-Path $env:LOCALAPPDATA 'mise\shims\ccr.exe'),
+        (Join-Path $env:LOCALAPPDATA 'mise\shims\ccr.cmd'),
+        (Join-Path $env:USERPROFILE  '.local\share\mise\shims\ccr.cmd')
+    )
+    foreach ($c in $candidates) { if (Test-Path $c) { $ccrCmd = $c; break } }
+}
+if (-not $ccrCmd) {
+    $ts = (Get-Date).ToString('o')
+    Add-Content $logFile "$ts [supervisor] FATAL ccr not found on PATH or in mise shims"
+    exit 127
+}
+
+{{ if eq (get . "cloudAuth" | default "apikey") "ccs-pro" -}}
+# ccs-pro mode: ensure CLIProxy is running before CCR starts.
+# ccs cliproxy start is idempotent — no-op if already running.
+$ccsCmd = (Get-Command ccs -ErrorAction SilentlyContinue).Source
+if (-not $ccsCmd) {
+    $candidates = @(
+        (Join-Path $env:LOCALAPPDATA 'mise\shims\ccs.cmd'),
+        (Join-Path $env:LOCALAPPDATA 'mise\shims\ccs'),
+        (Join-Path $env:APPDATA     'npm\ccs.cmd')
+    )
+    foreach ($c in $candidates) { if (Test-Path $c) { $ccsCmd = $c; break } }
+}
+if ($ccsCmd) {
+    $ts = (Get-Date).ToString('o')
+    Add-Content $logFile "$ts [supervisor] starting CLIProxy (ccs-pro mode)"
+    & $ccsCmd cliproxy start 2>&1 | ForEach-Object { Add-Content $logFile "$((Get-Date).ToString('o')) [cliproxy] $_" }
+} else {
+    $ts = (Get-Date).ToString('o')
+    Add-Content $logFile "$ts [supervisor] WARNING: ccs not found — cloud tier unavailable. Run: ccs claude --auth"
+}
+{{- end }}
+
+# Restart loop with fixed 5s backoff (matches systemd RestartSec=5s).
+$backoffSec = 5
+while ($true) {
+    $ts = (Get-Date).ToString('o')
+    Add-Content $logFile "$ts [supervisor] starting ccr ($ccrCmd)"
+
+    # Stream child output through a per-line timestamp prefixer so the audit
+    # script can do --since filtering without journalctl. *>&1 merges
+    # stderr+stdout; ForEach-Object runs as the line arrives.
+    & $ccrCmd start *>&1 | ForEach-Object {
+        $line = "$((Get-Date).ToString('o')) $_"
+        Add-Content -Path $logFile -Value $line
+        Write-Host $line
+    }
+    $exitCode = $LASTEXITCODE
+
+    $ts = (Get-Date).ToString('o')
+    Add-Content $logFile "$ts [supervisor] ccr exited code=$exitCode - restarting in ${backoffSec}s"
+    Start-Sleep -Seconds $backoffSec
+}
