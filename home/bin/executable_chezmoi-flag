@@ -18,6 +18,9 @@ set -euo pipefail
 #   chezmoi-flag get <key>
 #   chezmoi-flag set <key> <true|false|"string"|number>
 #   chezmoi-flag toggle <key>          # bool only
+#   chezmoi-flag unset <key>           # remove line + re-run chezmoi init
+#                                      # (re-prompts promptOnce keys, recomputes
+#                                      # derived fields like ollama.* / num_ctx)
 
 CONFIG="${HOME}/.config/chezmoi/chezmoi.toml"
 
@@ -138,6 +141,32 @@ set_flag() {
     chezmoi apply
 }
 
+unset_flag() {
+    local key="$1"
+    local res section leaf
+    res=$(resolve_key "$key") || exit 1
+    section="${res%%$'\t'*}"
+    leaf="${res##*$'\t'}"
+
+    local tmp
+    tmp=$(mktemp "${CONFIG}.XXXXXX")
+    trap 'rm -f "$tmp"' EXIT
+
+    awk -v s="[$section]" -v k="$leaf" '
+        $0 == s         { in_s=1; print; next }
+        /^\[/           { in_s=0; print; next }
+        in_s && $1==k   { next }
+                        { print }
+    ' "$CONFIG" > "$tmp"
+
+    mv "$tmp" "$CONFIG"
+    trap - EXIT
+
+    printf "removed %s.%s; re-running chezmoi init to re-prompt + recompute\n" \
+        "${section#data}" "$leaf" | sed 's/^\.//'
+    chezmoi init
+}
+
 toggle_flag() {
     local key="$1" cur
     cur=$(get_flag "$key")
@@ -177,6 +206,8 @@ case "${1:-}" in
                   set_flag "$2" "$3" ;;
     toggle)       valid_name "${2:-}" || { usage >&2; exit 1; }
                   toggle_flag "$2" ;;
+    unset)        valid_name "${2:-}" || { usage >&2; exit 1; }
+                  unset_flag "$2" ;;
     -h|--help|"") usage ;;
     *)            usage >&2; exit 1 ;;
 esac
