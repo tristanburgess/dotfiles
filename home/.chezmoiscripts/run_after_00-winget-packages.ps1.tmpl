@@ -48,6 +48,11 @@ $imageTools = @(
     'ImageMagick.ImageMagick'           # imagemagick -- convert/identify/montage/etc.
 )
 
+# DND keybinding runtime -- AHK fires ~/bin/toggle-dnd.sh on Win+Shift+D.
+$dndTools = @(
+    'AutoHotkey.AutoHotkey'             # global hotkey daemon for DND toggle
+)
+
 # Map winget IDs to process names for apps that block installs while running
 $processNames = @{
     'Spotify.Spotify'              = @('Spotify', 'SpotifyLauncher')
@@ -80,7 +85,7 @@ function Close-AppIfRunning($pkg) {
     return $false
 }
 
-$packages = $bootstrap + $cloudCLIs + $llmRuntime + $desktopApps + $pdfTools + $devTools + $imageTools
+$packages = $bootstrap + $cloudCLIs + $llmRuntime + $desktopApps + $pdfTools + $devTools + $imageTools + $dndTools
 
 foreach ($pkg in $packages) {
     $installed = winget list --id $pkg --exact 2>$null | Select-String $pkg
@@ -208,5 +213,158 @@ if ($codeCmd) {
     }
 } else {
     Write-Host "VS Code CLI not found yet -- extensions will install on the next chezmoi apply."
+}
+
+# -- BurntToast PowerShell module ---------------------------------------
+# notify.sh + toggle-dnd.sh both call BurntToast for Windows toast OSD.
+# Lives in PowerShell Gallery, not winget. First-time install needs the
+# NuGet provider bootstrapped + PSGallery trust + TLS 1.2 (older Windows
+# PowerShell defaults to TLS 1.0 which PSGallery rejects).
+if (-not (Get-Module -ListAvailable -Name BurntToast)) {
+    Write-Host "Installing BurntToast PowerShell module..."
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = `
+            [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        if (-not (Get-PackageProvider -Name NuGet -ListAvailable -ErrorAction SilentlyContinue)) {
+            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 `
+                -Force -Scope CurrentUser -Confirm:$false | Out-Null
+        }
+        if ((Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue).InstallationPolicy -ne 'Trusted') {
+            Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+        }
+        Install-Module -Name BurntToast -Scope CurrentUser `
+            -Force -AllowClobber -SkipPublisherCheck -Confirm:$false
+    } catch {
+        Write-Warning "BurntToast install failed: $_"
+    }
+} else {
+    Write-Host "BurntToast already installed"
+}
+
+# -- Toast AppId registration --------------------------------------------
+# Windows 11 will not brand toasts from an unpackaged Win32 caller (here:
+# powershell.exe) by registry alone -- it also requires a Start Menu .lnk
+# whose AppUserModelID property matches the AUMID. Without the shortcut,
+# CreateToastNotifier(<AppId>) succeeds but the toast renders as the
+# calling process ("PowerShell"). BurntToast's New-BTShortcut does the
+# IPropertyStore P/Invoke to set the AUMID property on the .lnk.
+#   docs: https://learn.microsoft.com/en-us/windows/win32/shell/enable-desktop-toast-with-appusermodelid
+if (Get-Module -ListAvailable -Name BurntToast) {
+    # AUMID convention: Publisher.Product. Bare "ClaudeCode" gets ignored by
+    # WpnUserService's notifier registration scan in some Win11 builds.
+    $appId = 'Anthropic.ClaudeCode'
+    $displayName = 'Claude Code'
+    $appKey = "HKCU:\Software\Classes\AppUserModelId\$appId"
+
+    # Clean up the prior bare-name AUMID + its shortcut.
+    $oldKey = 'HKCU:\Software\Classes\AppUserModelId\ClaudeCode'
+    if (Test-Path $oldKey) { Remove-Item -Path $oldKey -Recurse -Force -EA SilentlyContinue }
+    $oldLnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\ClaudeCode.lnk'
+    if (Test-Path $oldLnk) { Remove-Item -Force $oldLnk -EA SilentlyContinue }
+    $logoPng = Join-Path $env:USERPROFILE '.claude\claude-logo.png'
+    $logoIco = Join-Path $env:USERPROFILE '.claude\claude-logo.ico'
+
+    # Convert PNG -> ICO once for the .lnk icon. Registry IconUri accepts
+    # PNG, but .lnk IconLocation needs ICO for reliable rendering.
+    if ((Test-Path $logoPng) -and (-not (Test-Path $logoIco) -or `
+            (Get-Item $logoPng).LastWriteTime -gt (Get-Item $logoIco).LastWriteTime)) {
+        try {
+            Add-Type -AssemblyName System.Drawing
+            $bmp = [System.Drawing.Bitmap]::FromFile($logoPng)
+            $hicon = $bmp.GetHicon()
+            $icon = [System.Drawing.Icon]::FromHandle($hicon)
+            $fs = [System.IO.File]::Create($logoIco)
+            $icon.Save($fs)
+            $fs.Close(); $bmp.Dispose()
+            Write-Host "Converted Claude logo PNG -> ICO"
+        } catch {
+            Write-Warning "PNG->ICO conversion failed: $_"
+        }
+    }
+
+    # Registry side: display name + icon for Action Center grouping.
+    if (-not (Test-Path $appKey)) { New-Item -Path $appKey -Force | Out-Null }
+    Set-ItemProperty -Path $appKey -Name DisplayName -Value $displayName -Type String
+    # ShowInSettings=1 -> WpnUserService surfaces the AUMID in Settings >
+    # Notifications & actions. Required for branded toasts in Win11 22H2+.
+    Set-ItemProperty -Path $appKey -Name ShowInSettings -Value 1 -Type DWord
+    if (Test-Path $logoPng) {
+        Set-ItemProperty -Path $appKey -Name IconUri -Value $logoPng -Type String
+    }
+
+    # Start Menu shortcut with AUMID embedded -- the missing piece for
+    # branded toasts. Idempotent: New-BTShortcut overwrites if path exists.
+    $startMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+    $lnkPath = Join-Path $startMenu 'Claude Code.lnk'
+    Import-Module BurntToast -ErrorAction SilentlyContinue
+    try {
+        $btParams = @{
+            AppId = $appId
+            DisplayName = $displayName
+            ShortcutPath = $lnkPath
+        }
+        if (Test-Path $logoIco) { $btParams.IconPath = $logoIco }
+        New-BTShortcut @btParams -ErrorAction Stop
+        Write-Host "Created Start Menu shortcut for AUMID '$appId' at $lnkPath"
+    } catch {
+        Write-Warning "New-BTShortcut failed: $_"
+    }
+
+    # Force WpnUserService to re-scan the Start Menu so the new AUMID
+    # registers as a notification source. Without this, the first toasts
+    # after first install still render under PowerShell branding.
+    try {
+        $wpn = Get-Service | Where-Object { $_.Name -like 'WpnUserService_*' } | Select-Object -First 1
+        if ($wpn) {
+            Restart-Service -Name $wpn.Name -Force -ErrorAction SilentlyContinue
+            Write-Host "Restarted $($wpn.Name) to refresh AUMID registry"
+        }
+    } catch {
+        Write-Warning "WpnUserService restart failed: $_"
+    }
+}
+
+# -- AutoHotkey DND startup shortcut -------------------------------------
+# Drop a shortcut in shell:startup pointing AutoHotkey at the managed
+# .ahk script so Win+Shift+D works after every login. Idempotent.
+$ahkScript = Join-Path $env:APPDATA 'AutoHotkey\dnd-toggle.ahk'
+$ahkExe = @(
+    "$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe",
+    "$env:ProgramFiles\AutoHotkey\v2\AutoHotkey64.exe",
+    "$env:ProgramFiles\AutoHotkey\AutoHotkey.exe"
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+$startupDir = [Environment]::GetFolderPath('Startup')
+$lnkPath = Join-Path $startupDir 'ClaudeDND.lnk'
+
+if ($ahkExe -and (Test-Path $ahkScript)) {
+    $needsCreate = -not (Test-Path $lnkPath)
+    if (-not $needsCreate) {
+        $shell = New-Object -ComObject WScript.Shell
+        $existing = $shell.CreateShortcut($lnkPath)
+        if ($existing.TargetPath -ne $ahkExe -or $existing.Arguments -ne "`"$ahkScript`"") {
+            $needsCreate = $true
+        }
+    }
+    if ($needsCreate) {
+        Write-Host "Creating DND startup shortcut at $lnkPath"
+        $shell = New-Object -ComObject WScript.Shell
+        $lnk = $shell.CreateShortcut($lnkPath)
+        $lnk.TargetPath = $ahkExe
+        $lnk.Arguments = "`"$ahkScript`""
+        $lnk.WorkingDirectory = Split-Path $ahkScript
+        $lnk.Description = 'Claude DND toggle (Win+Shift+D)'
+        $lnk.Save()
+    } else {
+        Write-Host "DND startup shortcut up to date"
+    }
+    # Launch now if not already running so the keybind works in this session.
+    $ahkRunning = Get-Process -Name AutoHotkey64,AutoHotkey -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -eq $ahkExe }
+    if (-not $ahkRunning) {
+        Start-Process -FilePath $ahkExe -ArgumentList "`"$ahkScript`"" -WindowStyle Hidden
+    }
+} else {
+    if (-not $ahkExe)    { Write-Host "AutoHotkey not found -- DND shortcut deferred until next chezmoi apply." }
+    if (-not (Test-Path $ahkScript)) { Write-Host "DND .ahk script not yet placed -- skipping startup shortcut." }
 }
 {{- end -}}
