@@ -1,0 +1,265 @@
+{{- if and .isLinuxBaremetal .installClaude (get . "useCcr" | default true) -}}
+#!/bin/bash
+set -euo pipefail
+
+# llama.cpp bootstrap for the tiered-model routing setup.
+# Re-runs when this script changes.
+#
+# Steps:
+#   1. Install or update llama.cpp Vulkan release ($LLAMA_CPP_VERSION).
+#      Bumping the version here re-downloads + restarts the router.
+#   2. Generate /var/lib/llama.cpp/presets.ini from chezmoi data
+#      (per-lane ctx-size, draft model for qwen3 lanes, FA, KV q8_0).
+#   3. Generate /etc/systemd/system/llama-server.service running
+#      llama-server in --models-dir router mode on 127.0.0.1:11434.
+#   4. Reload + enable + restart the service.
+#   5. Verify expected GGUFs are present; warn (don't fail) on missing.
+#
+# GGUFs live in /var/lib/llama.cpp/models/<name>.gguf. Place files
+# there manually after a fresh install; chezmoi does not download models.
+# See home/.chezmoi.toml.tmpl for profile definitions and num_ctx math.
+
+LLAMA_CPP_VERSION="b9041"
+LLAMA_CPP_TARBALL="llama-${LLAMA_CPP_VERSION}-bin-ubuntu-vulkan-x64.tar.gz"
+LLAMA_CPP_URL="https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_CPP_VERSION}/${LLAMA_CPP_TARBALL}"
+LLAMA_CPP_DIR="/usr/local/lib/llama.cpp"
+LLAMA_CPP_VERSION_FILE="$LLAMA_CPP_DIR/.chezmoi-version"
+MODELS_DIR="/var/lib/llama.cpp/models"
+PRESETS_FILE="/var/lib/llama.cpp/presets.ini"
+UNIT_FILE="/etc/systemd/system/llama-server.service"
+
+NUM_CTX={{ .localNumCtx }}
+LANE_CODE="{{ .local.code }}"
+LANE_PROSE="{{ .local.prose }}"
+LANE_THINK="{{ .local.think }}"
+LANE_DRAFT="{{ .local.draft }}"
+
+if [[ ! -d "$MODELS_DIR" ]]; then
+    sudo mkdir -p "$MODELS_DIR"
+    sudo chown -R tristan:tristan /var/lib/llama.cpp
+fi
+
+# 1. Install / update llama.cpp Vulkan release.
+
+current_version=""
+if [[ -f "$LLAMA_CPP_VERSION_FILE" ]]; then
+    current_version=$(cat "$LLAMA_CPP_VERSION_FILE")
+fi
+
+if [[ "$current_version" != "$LLAMA_CPP_VERSION" ]]; then
+    printf "Installing llama.cpp %s (was: %s)...\n" "$LLAMA_CPP_VERSION" "${current_version:-none}"
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' EXIT
+    curl -fsSL "$LLAMA_CPP_URL" -o "$tmp/llama.tar.gz"
+    tar -xzf "$tmp/llama.tar.gz" -C "$tmp"
+    extracted_dir=$(find "$tmp" -maxdepth 1 -type d -name "llama-${LLAMA_CPP_VERSION}" | head -1)
+    [[ -z "$extracted_dir" ]] && { printf "tarball layout unexpected\n" >&2; exit 1; }
+    sudo rm -rf "$LLAMA_CPP_DIR"
+    sudo mkdir -p "$LLAMA_CPP_DIR"
+    sudo cp -a "$extracted_dir/." "$LLAMA_CPP_DIR/"
+    sudo chown -R root:root "$LLAMA_CPP_DIR"
+    for b in llama-server llama-cli llama-bench llama-completion; do
+        sudo ln -sf "$LLAMA_CPP_DIR/$b" "/usr/local/bin/$b"
+    done
+    if ! sudo grep -q "$LLAMA_CPP_DIR" /etc/ld.so.conf.d/llama-cpp.conf 2>/dev/null; then
+        echo "$LLAMA_CPP_DIR" | sudo tee /etc/ld.so.conf.d/llama-cpp.conf >/dev/null
+    fi
+    sudo ldconfig
+    printf '%s' "$LLAMA_CPP_VERSION" | sudo tee "$LLAMA_CPP_VERSION_FILE" >/dev/null
+    sudo chown root:root "$LLAMA_CPP_VERSION_FILE"
+fi
+
+# 2. Generate presets.ini from chezmoi data.
+#
+# qwen3 lanes get spec-decode via qwen3-0.6b-draft (vocab 151936 matches
+# qwen3:14b/8b targets — verified on this hardware: +71% decode at 8B,
+# +62% decode at 14B vs no draft on Vulkan).
+# gemma3 prose lane has no draft (different vocab, different family).
+DESIRED_PRESETS=$(cat <<EOF
+[$LANE_CODE]
+model = $MODELS_DIR/${LANE_CODE}.gguf
+model-draft = $MODELS_DIR/${LANE_DRAFT}.gguf
+ctx-size = $NUM_CTX
+ctx-size-draft = $NUM_CTX
+n-gpu-layers = 99
+n-gpu-layers-draft = 99
+flash-attn = on
+cache-type-k = q8_0
+cache-type-v = q8_0
+spec-draft-n-min = 2
+spec-draft-n-max = 32
+reasoning = off
+
+[$LANE_THINK]
+model = $MODELS_DIR/${LANE_THINK}.gguf
+model-draft = $MODELS_DIR/${LANE_DRAFT}.gguf
+ctx-size = $NUM_CTX
+ctx-size-draft = $NUM_CTX
+n-gpu-layers = 99
+n-gpu-layers-draft = 99
+flash-attn = on
+cache-type-k = q8_0
+cache-type-v = q8_0
+spec-draft-n-min = 2
+spec-draft-n-max = 32
+
+[$LANE_PROSE]
+model = $MODELS_DIR/${LANE_PROSE}.gguf
+ctx-size = $NUM_CTX
+n-gpu-layers = 99
+flash-attn = on
+cache-type-k = q8_0
+cache-type-v = q8_0
+reasoning = off
+EOF
+)
+
+PRESETS_CHANGED=0
+if [[ ! -f "$PRESETS_FILE" ]] || ! diff -q <(printf '%s' "$DESIRED_PRESETS") "$PRESETS_FILE" >/dev/null 2>&1; then
+    printf '%s\n' "$DESIRED_PRESETS" | sudo tee "$PRESETS_FILE" >/dev/null
+    sudo chown tristan:tristan "$PRESETS_FILE"
+    PRESETS_CHANGED=1
+    printf "Wrote %s\n" "$PRESETS_FILE"
+fi
+
+# 3. Generate systemd unit.
+DESIRED_UNIT=$(cat <<'EOF'
+[Unit]
+Description=llama.cpp llama-server router
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=tristan
+Group=tristan
+SupplementaryGroups=video render
+Environment="LD_LIBRARY_PATH=/usr/local/lib/llama.cpp"
+ExecStart=/usr/local/bin/llama-server \
+  --models-dir /var/lib/llama.cpp/models \
+  --models-preset /var/lib/llama.cpp/presets.ini \
+  --models-max 1 \
+  --host 127.0.0.1 \
+  --port 11434
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
+EOF
+)
+
+UNIT_CHANGED=0
+if [[ ! -f "$UNIT_FILE" ]] || ! diff -q <(printf '%s' "$DESIRED_UNIT") "$UNIT_FILE" >/dev/null 2>&1; then
+    printf '%s\n' "$DESIRED_UNIT" | sudo tee "$UNIT_FILE" >/dev/null
+    sudo chown root:root "$UNIT_FILE"
+    UNIT_CHANGED=1
+    printf "Wrote %s\n" "$UNIT_FILE"
+fi
+
+# Remove leftover Ollama systemd drop-in if it survived migration.
+if [[ -d /etc/systemd/system/ollama.service.d ]]; then
+    sudo rm -rf /etc/systemd/system/ollama.service.d
+fi
+
+# 4. Reload + enable + restart.
+if [[ $UNIT_CHANGED -eq 1 ]]; then
+    sudo systemctl daemon-reload
+fi
+sudo systemctl enable llama-server.service 2>/dev/null || true
+if [[ $PRESETS_CHANGED -eq 1 || $UNIT_CHANGED -eq 1 ]] || ! systemctl is-active --quiet llama-server.service; then
+    sudo systemctl restart llama-server.service
+fi
+
+# Wait for the router to bind the port (max ~15s).
+printf "Waiting for llama-server router..."
+for _ in $(seq 1 15); do
+    if curl -sf http://127.0.0.1:11434/v1/models >/dev/null 2>&1; then
+        printf " ready.\n"
+        break
+    fi
+    sleep 1
+    printf "."
+done
+
+# 5. Verify GGUF presence.
+declare -A REQUIRED=(
+    ["$LANE_CODE"]=code
+    ["$LANE_PROSE"]=prose
+    ["$LANE_THINK"]=think
+    ["$LANE_DRAFT"]=draft
+)
+MISSING=()
+for name in "${!REQUIRED[@]}"; do
+    [[ -f "$MODELS_DIR/${name}.gguf" ]] || MISSING+=("$name (${REQUIRED[$name]} lane)")
+done
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+    printf "\n⚠  Missing GGUFs in %s:\n" "$MODELS_DIR"
+    for m in "${MISSING[@]}"; do printf "    - %s\n" "$m"; done
+    printf "  Place the GGUF files manually or fetch via:\n"
+    printf "    llama-server --hf-repo <user>/<repo>:<quant> --port 0 # populates ~/.cache/llama.cpp\n"
+    printf "  Then move/rename into %s/<name>.gguf and restart llama-server.\n" "$MODELS_DIR"
+fi
+
+printf "\nllama.cpp ready. Profile: %s, ctx=%s, RAM=%s GiB.\n" \
+    "{{ .localProfile }}" "$NUM_CTX" "{{ .totalRamGiB }}"
+printf "  models: %s, %s, %s (draft: %s)\n" "$LANE_CODE" "$LANE_PROSE" "$LANE_THINK" "$LANE_DRAFT"
+{{- else if and .isLinuxBaremetal .installClaude -}}
+#!/bin/bash
+set -euo pipefail
+
+# useCcr=false teardown for the llama.cpp local-LLM stack. Re-runs when
+# the rendered script content changes (i.e., when the flag flips from
+# true → false). Stops the service, prompts to remove models + binaries.
+
+UNIT_FILE="/etc/systemd/system/llama-server.service"
+
+if systemctl is-active --quiet llama-server.service 2>/dev/null; then
+    sudo systemctl stop llama-server.service || true
+fi
+if systemctl is-enabled --quiet llama-server.service 2>/dev/null; then
+    sudo systemctl disable llama-server.service || true
+fi
+if [[ -f "$UNIT_FILE" ]]; then
+    sudo rm -f "$UNIT_FILE"
+    sudo systemctl daemon-reload || true
+fi
+
+printf "llama-server stopped and disabled.\n"
+
+if ! [ -c /dev/tty ] || ! { : </dev/tty; } 2>/dev/null; then
+    printf "\nNon-interactive shell — skipping model/binary removal.\n"
+    printf "To finish cleanup manually:\n"
+    printf "  sudo rm -rf /var/lib/llama.cpp /usr/local/lib/llama.cpp\n"
+    printf "  sudo rm -f /usr/local/bin/{llama-server,llama-cli,llama-bench,llama-completion}\n"
+    printf "  sudo rm -f /etc/ld.so.conf.d/llama-cpp.conf && sudo ldconfig\n"
+    exit 0
+fi
+
+read -rp "Remove the local models in /var/lib/llama.cpp/models (~22 GB)? [y/N] " ans </dev/tty
+case "$ans" in
+    [yY]|[yY][eE][sS])
+        sudo rm -rf /var/lib/llama.cpp
+        printf "Models removed.\n"
+        ;;
+    *)
+        printf "Skipped. Models remain in /var/lib/llama.cpp/models.\n"
+        ;;
+esac
+
+read -rp "Remove the llama.cpp binaries? [y/N] " ans </dev/tty
+case "$ans" in
+    [yY]|[yY][eE][sS])
+        sudo rm -rf /usr/local/lib/llama.cpp
+        sudo rm -f /usr/local/bin/llama-server /usr/local/bin/llama-cli \
+                   /usr/local/bin/llama-bench /usr/local/bin/llama-completion
+        sudo rm -f /etc/ld.so.conf.d/llama-cpp.conf
+        sudo ldconfig
+        printf "Binaries removed.\n"
+        ;;
+    *)
+        printf "Binaries kept at /usr/local/lib/llama.cpp.\n"
+        ;;
+esac
+{{- end -}}

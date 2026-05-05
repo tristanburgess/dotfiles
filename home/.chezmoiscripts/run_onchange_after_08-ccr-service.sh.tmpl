@@ -3,7 +3,14 @@
 set -euo pipefail
 
 # Enable the claude-code-router systemd user service. Re-runs when this
-# script or the unit changes.
+# script, the unit, or any CCR config/transformer/router file changes.
+#
+# CCR file hashes (chezmoi re-runs this script when any of these change):
+# config.json:                  {{ include "private_dot_claude-code-router/config.json.tmpl" | sha256sum }}
+# router.js:                    {{ include "private_dot_claude-code-router/router.js.tmpl" | sha256sum }}
+# cloudfallback.transformer.js: {{ include "private_dot_claude-code-router/cloudfallback.transformer.js.tmpl" | sha256sum }}
+# anthropic-shim.transformer.js: {{ include "private_dot_claude-code-router/anthropic-shim.transformer.js.tmpl" | sha256sum }}
+# audit.transformer.js:         {{ include "private_dot_claude-code-router/audit.transformer.js.tmpl" | sha256sum }}
 
 UNIT_NAME=claude-code-router.service
 
@@ -21,6 +28,11 @@ if ! systemctl --user is-active --quiet "$UNIT_NAME"; then
         exit 1
     }
 else
+    # Drain any loaded model in the local llama-server router before restarting
+    # CCR. The router will reload it on the next request with the new preset
+    # (in case ctx-size or spec-decode flags changed). Best-effort: ignore
+    # errors if the router isn't running yet.
+    curl -sf -X POST http://127.0.0.1:11434/unload >/dev/null 2>&1 || true
     # If the unit already running, restart so config/router.js changes apply.
     systemctl --user restart "$UNIT_NAME"
 fi
