@@ -33,7 +33,7 @@ starship = "1.25.1"
 # renovate: packageName=astral-sh/uv datasource=github-releases
 uv = "0.11.8"
 # renovate: packageName=hashicorp/terraform datasource=github-releases
-terraform = { version = "1.15.1", os = ["linux"] }
+terraform = { version = "1.15.2", os = ["linux"] }
 # renovate: packageName=ajeetdsouza/zoxide datasource=github-releases
 zoxide = "0.9.9"
 
