@@ -3,7 +3,7 @@
 # renovate: bun
 bun = "1.3.13"
 # renovate: packageName=@anthropic-ai/claude-code datasource=npm
-claude-code = "2.1.126"
+claude-code = "2.1.131"
 # renovate: packageName=@musistudio/claude-code-router datasource=npm
 "npm:@musistudio/claude-code-router" = "latest"
 # renovate: packageName=duckduckgo-mcp-server datasource=npm
