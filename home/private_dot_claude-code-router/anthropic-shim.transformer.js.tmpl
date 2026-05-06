@@ -1,0 +1,124 @@
+// CCR custom transformer: rewrite outgoing requests to the Anthropic API
+// so they conform to the current API contract. Applied via a global
+// fetch monkey-patch (does not depend on CCR transformer-chain position
+// or bypass mode).
+//
+// Wired via config.json (just `path`, no options needed — defaults are
+// templated below from chezmoi data). Instantiating the class installs
+// the global fetch hook as a side effect.
+//
+// Fix 1: auth header
+//   CCR's default fD wraps the API key in `Authorization: Bearer <key>`.
+//   Anthropic's API only accepts that for OAuth (Pro/Max) tokens, not
+//   for raw API keys. Direct API-key requests must use `x-api-key`.
+//
+// Fix 2: thinking format
+//   Newer Anthropic models (currently claude-opus-4-7+) reject
+//   thinking.type=enabled with 400. They require thinking.type=adaptive
+//   + output_config.effort. We rewrite the body when both conditions
+//   match.
+//
+// Options (from chezmoi data via config.json template):
+//   thinkingModel    target model name. Substring-matched against the
+//                    request's `model` field so "[1m]" variants are
+//                    covered. Sourced from .cloud.opus.
+//   thinkingEffort   output_config.effort: low | medium | high | xhigh.
+//                    Drop to "high" or "medium" to reduce spend per
+//                    Opus call. Sourced from .cloudThinkingEffort
+//                    (default "xhigh") in ~/.config/chezmoi/chezmoi.toml.
+//
+// Debug: set CCR_DEBUG_ANTHROPIC_SHIM=1 in secrets.env to log every
+// header swap and body rewrite to journalctl.
+
+const ANTHROPIC_API_RE = /api\.anthropic\.com/i;
+const DEBUG = process.env.CCR_DEBUG_ANTHROPIC_SHIM === "1";
+
+function swapAuthHeader(headers) {
+  if (!headers) return false;
+  if (headers instanceof Headers) {
+    const auth = headers.get("authorization");
+    if (auth && auth.toLowerCase().startsWith("bearer ")) {
+      headers.set("x-api-key", auth.slice(7));
+      headers.delete("authorization");
+      return true;
+    }
+  } else if (typeof headers === "object") {
+    const k = Object.keys(headers).find(k => k.toLowerCase() === "authorization");
+    if (k && typeof headers[k] === "string" && headers[k].toLowerCase().startsWith("bearer ")) {
+      headers["x-api-key"] = headers[k].slice(7);
+      delete headers[k];
+      return true;
+    }
+  }
+  return false;
+}
+
+function setHeaderValue(headers, name, value) {
+  if (!headers) return;
+  if (headers instanceof Headers) {
+    if (headers.has(name)) headers.set(name, value);
+  } else if (typeof headers === "object") {
+    const k = Object.keys(headers).find(k => k.toLowerCase() === name.toLowerCase());
+    if (k) headers[k] = value;
+  }
+}
+
+function ensureHeader(headers, name, value) {
+  if (!headers) return;
+  if (headers instanceof Headers) {
+    if (!headers.has(name)) headers.set(name, value);
+  } else if (typeof headers === "object") {
+    const k = Object.keys(headers).find(k => k.toLowerCase() === name.toLowerCase());
+    if (!k) headers[name] = value;
+  }
+}
+
+class AnthropicShimTransformer {
+  constructor(options) {
+    this.options = options || {};
+    this.name = "anthropic-shim";
+
+    const thinkingModel = this.options.thinkingModel || "{{ .cloud.opus }}";
+    const effort = this.options.thinkingEffort || "{{ get . "cloudThinkingEffort" | default "xhigh" }}";
+
+    if (globalThis.__ccrAnthropicShimPatched) return;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async function shimmedFetch(input, init) {
+      const url = typeof input === "string" ? input : (input && input.url) || "";
+      if (ANTHROPIC_API_RE.test(url) && init) {
+        const swapped = swapAuthHeader(init.headers);
+        ensureHeader(init.headers, "anthropic-version", "2023-06-01");
+        if (DEBUG && swapped) console.log(`[anthropic-shim] swapped auth header for ${url}`);
+
+        if (init.body) {
+          try {
+            const text = typeof init.body === "string"
+              ? init.body
+              : Buffer.from(init.body).toString("utf8");
+            const obj = JSON.parse(text);
+            if (obj.model && obj.model.includes(thinkingModel)
+                && obj.thinking && obj.thinking.type === "enabled") {
+              obj.thinking = { type: "adaptive" };
+              obj.output_config = { effort };
+              const rewritten = JSON.stringify(obj);
+              init.body = rewritten;
+              setHeaderValue(init.headers, "content-length", String(Buffer.byteLength(rewritten, "utf8")));
+              if (DEBUG) {
+                console.log(
+                  `[anthropic-shim] rewrite thinking.enabled -> adaptive/${effort} model=${obj.model}`
+                );
+              }
+            }
+          } catch (_) {}
+        }
+      }
+      return realFetch(input, init);
+    };
+    globalThis.__ccrAnthropicShimPatched = true;
+    console.log(`[anthropic-shim] global fetch patched (model=${thinkingModel} effort=${effort})`);
+  }
+}
+
+AnthropicShimTransformer.TransformerName = "anthropic-shim";
+
+module.exports = AnthropicShimTransformer;

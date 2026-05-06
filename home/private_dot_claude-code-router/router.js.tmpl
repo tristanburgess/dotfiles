@@ -35,8 +35,8 @@ const fs   = require("fs");
 const path = require("path");
 const net  = require("net");
 
-const DEFAULT_LOCAL  = {{ get . "defaultLocal" | default true }};
-const CLOUD_THINKING = {{ get . "cloudThinking" | default true }};
+const DEFAULT_LOCAL  = {{ if hasKey . "defaultLocal" }}{{ get . "defaultLocal" }}{{ else }}true{{ end }};
+const CLOUD_THINKING = {{ if hasKey . "cloudThinking" }}{{ get . "cloudThinking" }}{{ else }}true{{ end }};
 {{ if eq (get . "cloudAuth" | default "apikey") "ccs-pro" -}}
 // ccs-pro: cache CCS proxy health. A 200ms TCP probe per-request is too slow;
 // cache result for 10s. Down = treat all cloud families as grounded.
@@ -91,9 +91,9 @@ const PROMPT_SNIPPET_LEN = 120;
 // Audit-only subagent detection — substring match against body.system.
 const KNOWN_SUBAGENTS = {{ .routing.knownSubagents | toJson }};
 
-const LOCAL_CODE   = "ollama,{{ .ollama.code }}";
-const LOCAL_PROSE  = "ollama,{{ .ollama.prose }}";
-const LOCAL_THINK  = "ollama,{{ .ollama.think }}";
+const LOCAL_CODE   = "local,{{ .local.code }}";
+const LOCAL_PROSE  = "local,{{ .local.prose }}";
+const LOCAL_THINK  = "local,{{ .local.think }}";
 const CLOUD_SONNET = "anthropic,{{ .cloud.sonnet }}";
 const CLOUD_OPUS   = "anthropic,{{ .cloud.opus }}";
 const CLOUD_HAIKU  = "anthropic,{{ .cloud.haiku }}";
@@ -340,12 +340,22 @@ module.exports = async function router(req /*, config */) {
   //      family so a sonnet rate-limit doesn't ground haiku and vice versa.
   const downUntil = cloudDownUntil(cls);
   if (downUntil > 0) {
+    const ctx = estimateTokens(body);
+    // If ctx exceeds local capacity, escape to the other cloud family
+    // instead of breaking on the local model's hard limit. opus down →
+    // sonnet; sonnet/haiku down → opus.
+    if (localPerfExceeded(ctx)) {
+      const escape = (cls === "opus") ? CLOUD_SONNET : CLOUD_OPUS;
+      log({ reqId, model, cls, reason: "cloud-fallback-ctx-overflow", dest: escape, body,
+        extras: { ctx, fallbackUntil: new Date(downUntil).toISOString() } });
+      return escape;
+    }
     const lane = (cls === "haiku" || cls === "sonnet")
       ? localLaneFor(body)
       : { dest: LOCAL_THINK, signal: "opus-fallback-think" };
     log({ reqId, model, cls, reason: "cloud-fallback", dest: lane.dest, body,
       extras: {
-        ctx: estimateTokens(body),
+        ctx,
         fallbackUntil: new Date(downUntil).toISOString(),
         laneSignal: lane.signal,
       } });

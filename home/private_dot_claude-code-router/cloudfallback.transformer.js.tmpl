@@ -160,48 +160,15 @@ if (!globalThis.__ccrFetchPatched) {
   console.log("[cloudfallback] global fetch patched for upstream-error capture");
 }
 
+// Class exists only so CCR's transformer loader recognizes the file.
+// All grounding logic lives in the global fetch monkey-patch above.
+// No `transformRequestIn` / `transformResponseIn` — the provider's
+// `use` chain doesn't reference this transformer (bypass mode is
+// active for the anthropic provider with `["Anthropic"]` only).
 class CloudFallbackTransformer {
   constructor(options) {
     this.options = options || {};
     this.name = "cloudfallback";
-  }
-
-  // Pre-flight: stash the requested model on the request so we can recover
-  // it in transformResponseIn (where we only see the upstream Response).
-  async transformRequestIn(request /*, provider, ctx */) {
-    if (request && request.model) {
-      this._lastModel = request.model;
-    }
-    return request;
-  }
-
-  // Inspect upstream Response. Anthropic returns Retry-After (seconds) on
-  // 429. Pass the response through unchanged either way.
-  async transformResponseIn(response /*, ctx */) {
-    const family = familyFromModel(this._lastModel);
-    if (!family) return response;
-
-    const status = response.status;
-    if (status === 429) {
-      const ra = parseInt(response.headers.get("retry-after") || "0", 10);
-      const ttl = (ra > 0 ? ra : DEFAULT_429_TTL_S) + 5;
-      setDown(family, ttl, ra > 0 ? `429-retry-after=${ra}` : "429-no-header");
-      backoff[family] = BACKOFF_INIT_S;
-    } else if (status === 401) {
-      // OAuth token expired / refresh failed (ccs-pro mode). Short TTL so
-      // requests degrade to local while user runs `ccs claude --auth`.
-      setDown(family, DEFAULT_401_TTL_S, "401-auth-expired");
-    } else if (status >= 500 && status < 600) {
-      const ttl = backoff[family];
-      setDown(family, ttl, `${status}-backoff`);
-      backoff[family] = Math.min(backoff[family] * BACKOFF_MULT, BACKOFF_CAP_S);
-    } else if (status >= 200 && status < 300) {
-      // Healthy response — clear any prior down marker and reset backoff.
-      const cur = readStatus();
-      if (cur[family]) clearDown(family);
-      backoff[family] = BACKOFF_INIT_S;
-    }
-    return response;
   }
 }
 

@@ -23,10 +23,10 @@
 
 {{- /* Single source of truth for model names referenced across the
        routing stack. Bumping a model here propagates to:
-         - run_onchange_after_07-ollama-bootstrap.sh.tmpl (pull + teardown)
+         - run_onchange_after_07-llama-cpp-bootstrap.sh.tmpl (presets.ini, models)
          - dot_claude-code-router/config.json.tmpl (provider model list, Router map)
          - dot_claude-code-router/router.js.tmpl (LOCAL_* / CLOUD_* constants)
-       Exposed in .chezmoi data as .ollama.{code,prose,think} and
+       Exposed in .chezmoi data as .local.{code,prose,think,draft} and
        .cloud.{sonnet,opus,haiku}.
 
        Local lanes are picked by the localProfile flag below:
@@ -39,34 +39,41 @@
                     MoE at frontier-class quality, needs 48+ GB.
          smart    — qwen3.6:27b dense code+think + gemma4:31b dense prose.
                     Highest single-shot quality; needs Chrome closed on 32 GB,
-                    comfortable on 48+ GB. */ -}}
+                    comfortable on 48+ GB.
+
+       Names are llama.cpp-friendly slugs (no colons, dashes only). They
+       match GGUF filenames in /var/lib/llama.cpp/models/<name>.gguf and
+       become the OpenAI API model id. Draft model is qwen3-0.6b for the
+       qwen3-family lanes (vocab 151936 matches qwen3:14b/8b targets);
+       gemma3 prose lane has no draft (different family). */ -}}
 {{- $profilePrompt := "Local model profile (lean | fast | balanced | smart)" -}}
 {{- if gt $totalRamGiB 0 -}}
 {{-   $profilePrompt = printf "Local model profile [%d GB detected, recommended: %s] (lean=14B fits anywhere | smart/fast/balanced=27-35B need 48+ GB for usable ctx)" $totalRamGiB $recommendedProfile -}}
 {{- end -}}
 {{- $localProfile := promptStringOnce . "localProfile" $profilePrompt $recommendedProfile -}}
-{{- $ollamaCode := "" -}}
-{{- $ollamaProse := "" -}}
-{{- $ollamaThink := "" -}}
+{{- $localCode := "" -}}
+{{- $localProse := "" -}}
+{{- $localThink := "" -}}
+{{- $localDraft := "qwen3-0.6b-draft" -}}
 {{- if eq $localProfile "lean" -}}
-{{-   $ollamaCode  = "qwen3:14b-q4_K_M" -}}
-{{-   $ollamaProse = "gemma3:12b-it-q4_K_M" -}}
-{{-   $ollamaThink = "qwen3:8b-q4_K_M" -}}
+{{-   $localCode  = "qwen3-14b-q4km" -}}
+{{-   $localProse = "gemma3-12b-it-q4km" -}}
+{{-   $localThink = "qwen3-8b-q4km" -}}
 {{- else if eq $localProfile "fast" -}}
-{{-   $ollamaCode  = "gemma4:26b-a4b-it-q4_K_M" -}}
-{{-   $ollamaProse = "gemma4:e4b-it-q4_K_M" -}}
-{{-   $ollamaThink = "qwen3.6:35b-a3b-q4_K_M" -}}
+{{-   $localCode  = "gemma4-26b-a4b-it-q4km" -}}
+{{-   $localProse = "gemma4-e4b-it-q4km" -}}
+{{-   $localThink = "qwen3.6-35b-a3b-q4km" -}}
 {{- else if eq $localProfile "smart" -}}
-{{-   $ollamaCode  = "qwen3.6:27b-q4_K_M" -}}
-{{-   $ollamaProse = "gemma4:31b-it-q4_K_M" -}}
-{{-   $ollamaThink = "qwen3.6:27b-q4_K_M" -}}
+{{-   $localCode  = "qwen3.6-27b-q4km" -}}
+{{-   $localProse = "gemma4-31b-it-q4km" -}}
+{{-   $localThink = "qwen3.6-27b-q4km" -}}
 {{- else -}}
-{{-   $ollamaCode  = "qwen3.6:35b-a3b-q4_K_M" -}}
-{{-   $ollamaProse = "gemma4:26b-a4b-it-q4_K_M" -}}
-{{-   $ollamaThink = "qwen3.6:35b-a3b-q4_K_M" -}}
+{{-   $localCode  = "qwen3.6-35b-a3b-q4km" -}}
+{{-   $localProse = "gemma4-26b-a4b-it-q4km" -}}
+{{-   $localThink = "qwen3.6-35b-a3b-q4km" -}}
 {{- end -}}
 
-{{- /* Compute safe Ollama context window from total RAM + profile.
+{{- /* Compute safe context window from total RAM + profile.
      Formula: (total_ram - headroom - model_weights) * tokens_per_gib
      Headroom is per-profile (the user's implicit OS-overhead budget):
        lean  45% — apps stay open, browsers running. Always-fits profile.
@@ -79,51 +86,40 @@
        fast/balanced (MoE):  ~0.18 MB/token = 5600 tokens/GiB
      Result is capped [2048, 32768]. Bootstrap warns if < 4096.
      Zero totalRamGiB (detection failed) → fall back to 20000. */ -}}
-{{- $ollamaNumCtx := 20000 -}}
+{{- $localNumCtx := 20000 -}}
 {{- if gt $totalRamGiB 0 -}}
-{{-   $ollamaWeightsGiB := 9 -}}
+{{-   $localWeightsGiB := 9 -}}
 {{-   $tokensPerGiB := 4000 -}}
 {{-   $headroomPct := 45 -}}
 {{- /* smart's prose lane is gemma4:31b (~20 GiB), bigger than the
        27B code/think model. Use the largest as the constraint so none
        of the three lanes OOMs when its derived model loads. */ -}}
 {{-   if eq $localProfile "smart" -}}
-{{-     $ollamaWeightsGiB = 20 -}}
+{{-     $localWeightsGiB = 20 -}}
 {{-     $tokensPerGiB = 2400 -}}
 {{-     $headroomPct = 30 -}}
 {{-   else if or (eq $localProfile "fast") (eq $localProfile "balanced") -}}
-{{-     $ollamaWeightsGiB = 18 -}}
+{{-     $localWeightsGiB = 18 -}}
 {{-     $tokensPerGiB = 5600 -}}
 {{-     $headroomPct = 35 -}}
 {{-   end -}}
 {{-   $headroomGiB := div (mul $totalRamGiB $headroomPct) 100 -}}
-{{-   $kvGiB := sub (sub $totalRamGiB $headroomGiB) $ollamaWeightsGiB -}}
+{{-   $kvGiB := sub (sub $totalRamGiB $headroomGiB) $localWeightsGiB -}}
 {{-   $computed := mul $kvGiB $tokensPerGiB -}}
-{{-   $ollamaNumCtx = max 2048 (min 32768 $computed) -}}
+{{-   $localNumCtx = max 2048 (min 32768 $computed) -}}
 {{- end -}}
-
-{{- /* Derived model names embed the computed context window via Modelfile.
-     Bootstrap pulls .ollamaBase.* and creates .ollama.* via
-       ollama create <derived> -f <(echo "FROM <base>\nPARAMETER num_ctx N")
-     Naming convention: <base>-ctx<N>k where N = round(ollamaNumCtx / 1000).
-     Modelfile is the recommended persistence path per Ollama docs — env
-     vars (OLLAMA_CONTEXT_LENGTH) are unreliable; some models override them. */ -}}
-{{- $ctxK := div $ollamaNumCtx 1000 -}}
-{{- $codeDerived  := printf "%s-ctx%dk" $ollamaCode  $ctxK -}}
-{{- $proseDerived := printf "%s-ctx%dk" $ollamaProse $ctxK -}}
-{{- $thinkDerived := printf "%s-ctx%dk" $ollamaThink $ctxK -}}
 {{- $cloudSonnet := "claude-sonnet-4-6" -}}
 {{- $cloudOpus := "claude-opus-4-7" -}}
 {{- $cloudHaiku := "claude-haiku-4-5-20251001" -}}
 {{- /* Tiered model routing via claude-code-router + Ollama (local) +
        Anthropic API (cloud). Set false to run Claude Code straight to
        Anthropic with no proxy. */ -}}
-{{- $useCcr := promptBoolOnce . "useCcr" (printf "Enable tiered routing: local Ollama (%s code, %s prose, %s) + cloud Sonnet/Opus via CCR" $ollamaCode $ollamaProse $ollamaThink) true -}}
+{{- $useCcr := promptBoolOnce . "useCcr" (printf "Enable tiered routing: local llama.cpp (%s code, %s prose, %s think) + cloud Sonnet/Opus via CCR" $localCode $localProse $localThink) true -}}
 {{- /* Expose the Windows-host Ollama on LAN (TCP 11434, Private profile,
        LocalSubnet only). Use case: a second laptop on the same network
        points at this box's LAN IP for Ollama. Untrusted networks remain
        blocked because Windows tags those adapters Public. */ -}}
-{{- $enableOllamaLan := promptBoolOnce . "enableOllamaLan" "Expose Ollama on LAN (TCP 11434, Private profile, LocalSubnet only)" false -}}
+{{- $enableLocalLan := promptBoolOnce . "enableLocalLan" "Expose local llama-server on LAN (TCP 11434, Private profile, LocalSubnet only)" false -}}
 {{- /* Bias for sonnet/opus borderline-classified requests:
        true  (default): borderline → local lane (cost bias)
        false:           borderline → cloud (quality bias)
@@ -151,6 +147,10 @@
                           Requires: npm install -g @kaitranntt/ccs + ccs claude --auth
                           Not available on WSL (WSL uses Windows-host CCR instead). */ -}}
 {{- $cloudAuth := promptStringOnce . "cloudAuth" "Cloud auth mode (apikey | ccs-pro)" "apikey" -}}
+{{- /* Opus thinking effort: low | medium | high | xhigh. Drop to "high"
+       or "medium" to reduce per-call cost. Templated into the
+       anthropic-shim transformer; takes effect on chezmoi apply. */ -}}
+{{- $cloudThinkingEffort := get . "cloudThinkingEffort" | default "xhigh" -}}
 {{- /* Routing ctx thresholds — three tiers, ordered:
          trivialCtx  ≤  localPerfCtx  <  complexCtx
 
@@ -172,20 +172,20 @@
        Invariants: trivialCtx ≤ localPerfCtx ≤ complexCtx. Setting
        localPerfCtx below trivialCtx forces trivial requests cloud (most
        aggressive cloud bias); setting it above complexCtx is a no-op. */ -}}
-{{- /* trivialCtx clamp: never exceed ollamaNumCtx, otherwise smart-profile
+{{- /* trivialCtx clamp: never exceed localNumCtx, otherwise smart-profile
        small-RAM machines route trivial sonnet/opus to a local model that
        can't fit the request. Hard ceiling stays at 12000 (the Claude Code
        baseline below which a request is unambiguously cheap). */ -}}
-{{- $trivialCtx := min 12000 $ollamaNumCtx -}}
-{{- /* localPerfCtx = ollamaNumCtx: local model capacity IS the routing ceiling.
+{{- $trivialCtx := min 12000 $localNumCtx -}}
+{{- /* localPerfCtx = localNumCtx: local model capacity IS the routing ceiling.
        Override ~/.config/chezmoi/chezmoi.toml manually if you want a lower
        threshold (e.g. Vulkan KV cache gets slow past 16K). */ -}}
-{{- $localPerfCtx := $ollamaNumCtx -}}
+{{- $localPerfCtx := $localNumCtx -}}
 {{- /* complexCtx: escalate to dedicated long-context cloud path above this.
        Grows with local capacity so we never cut off local at 60K when the
-       model can hold more. Currently a no-op (ollamaNumCtx capped at 32768)
+       model can hold more. Currently a no-op (localNumCtx capped at 32768)
        but forward-compatible if the cap is raised. */ -}}
-{{- $complexCtx := max 60000 $ollamaNumCtx -}}
+{{- $complexCtx := max 60000 $localNumCtx -}}
 {{- /* Subagent names sniffed from request system prompts purely for audit
        logging (subagent=<name> field on log lines). Does not affect
        routing decisions. Add new agents here as you adopt them. */ -}}
@@ -216,14 +216,15 @@ sourceDir = {{ .chezmoi.sourceDir | quote }}
     installClaude = {{ has "claude" $aiTools }}
     installCodex = {{ has "codex" $aiTools }}
     useCcr = {{ $useCcr }}
-    enableOllamaLan = {{ $enableOllamaLan }}
+    enableLocalLan = {{ $enableLocalLan }}
     defaultLocal = {{ $defaultLocal }}
     cloudThinking = {{ $cloudThinking }}
     logPrompt = {{ $logPrompt }}
     localProfile = {{ $localProfile | quote }}
     cloudAuth = {{ $cloudAuth | quote }}
+    cloudThinkingEffort = {{ $cloudThinkingEffort | quote }}
     totalRamGiB = {{ $totalRamGiB }}
-    ollamaNumCtx = {{ $ollamaNumCtx }}
+    localNumCtx = {{ $localNumCtx }}
 
 [data.routing]
     trivialCtx     = {{ $trivialCtx }}
@@ -231,21 +232,17 @@ sourceDir = {{ .chezmoi.sourceDir | quote }}
     complexCtx     = {{ $complexCtx }}
     knownSubagents = {{ $knownSubagents | toJson }}
 
-[data.ollama]
-    # Derived names: what config.json/router.js/audit/agent-core reference.
-    # These are the Modelfile-tagged variants the bootstrap creates with
-    # PARAMETER num_ctx baked in.
-    code  = {{ $codeDerived  | quote }}
-    prose = {{ $proseDerived | quote }}
-    think = {{ $thinkDerived | quote }}
-
-[data.ollamaBase]
-    # Base names: what bootstrap pulls from the Ollama registry. The
-    # bootstrap then runs `ollama create <derived> -f Modelfile` to
-    # produce the derived name with the computed num_ctx.
-    code  = {{ $ollamaCode  | quote }}
-    prose = {{ $ollamaProse | quote }}
-    think = {{ $ollamaThink | quote }}
+[data.local]
+    # Friendly llama.cpp model names. Match GGUF filenames at
+    # /var/lib/llama.cpp/models/<name>.gguf and the OpenAI-API model id
+    # exposed by the llama-server router on :11434. Per-model context size
+    # and spec-decode draft come from /var/lib/llama.cpp/presets.ini,
+    # generated by run_onchange_after_07-llama-cpp-bootstrap.sh.tmpl from
+    # localNumCtx + this profile's lane assignments.
+    code  = {{ $localCode  | quote }}
+    prose = {{ $localProse | quote }}
+    think = {{ $localThink | quote }}
+    draft = {{ $localDraft | quote }}
 
 [data.cloud]
     sonnet = {{ $cloudSonnet | quote }}

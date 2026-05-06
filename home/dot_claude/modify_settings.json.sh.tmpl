@@ -121,7 +121,10 @@ MANAGED='
   "gitAttribution": false,
   "env": {
     "CLAUDE_CODE_SUBAGENT_MODEL": "haiku",
-    "CLAUDE_MONTHLY_BUDGET": "200"{{ if (get . "useCcr" | default true) }},
+    "CLAUDE_MONTHLY_BUDGET": "200",
+    "CLAUDE_CODE_ATTRIBUTION_HEADER": "0",
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "0",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"{{ if (get . "useCcr" | default true) }},
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:3456"{{ end }}
   },
   "mcpServers": {

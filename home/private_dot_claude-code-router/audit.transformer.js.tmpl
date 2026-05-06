@@ -1,0 +1,206 @@
+// CCR custom transformer: tee response streams from upstreams (cloud
+// Anthropic + local llama-server) and emit a `[audit]` log line per
+// request capturing reasoning content / thinking trace metadata.
+//
+// Wired via config.json:
+//   transformers: [{ path: ".../audit.transformer.js" }]
+// Loading the file installs a global fetch monkey-patch as a side
+// effect; not required in any provider's `use` chain.
+//
+// What gets logged (one line per upstream completion):
+//   [audit] target=<host> model=<model> req=<id?> reasoning_chars=<N>
+//           text_chars=<M> excerpt="<truncated reasoning>"
+//
+// Streaming-safe: the response body is teed (passed through to the
+// client unchanged) and the captured copy is parsed *after* the stream
+// ends. Adds zero latency to the user-facing path, only buffers in
+// memory until the stream completes.
+//
+// Format detection:
+//   - llama-server / OpenAI-compatible:  data: {choices:[{delta:{reasoning_content,content}}]}
+//   - Anthropic:                         event: content_block_delta with thinking_delta / text_delta
+
+// Upstream URLs to audit. Built at chezmoi-apply time from active data:
+//   - api.anthropic.com always (cloud Sonnet/Opus path)
+//   - 127.0.0.1:11434 always (local llama-server router)
+//   - 127.0.0.1:8317 only when cloudAuth=ccs-pro (CCS/CLIProxy)
+const TARGET_RE = /(?:api\.anthropic\.com|127\.0\.0\.1:11434{{ if eq (get . "cloudAuth" | default "apikey") "ccs-pro" }}|127\.0\.0\.1:8317{{ end }})/i;
+const EXCERPT_LEN = 200;
+
+function modelFromBody(rawBody) {
+  if (!rawBody) return null;
+  try {
+    const s = typeof rawBody === "string" ? rawBody : Buffer.from(rawBody).toString("utf8");
+    const m = s.match(/"model"\s*:\s*"([^"]+)"/);
+    return m ? m[1] : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function targetHost(url) {
+  try {
+    return new URL(url).host;
+  } catch (_) {
+    return "?";
+  }
+}
+
+// Parse a captured SSE buffer and aggregate reasoning + text content.
+// Handles both the OpenAI-shape stream (llama-server) and the Anthropic
+// /v1/messages stream. Tolerant: malformed lines are skipped silently.
+function extractFromStream(buf) {
+  let reasoning = "";
+  let text = "";
+  const lines = buf.split(/\r?\n/);
+  for (const line of lines) {
+    if (!line.startsWith("data:")) continue;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+    let obj;
+    try { obj = JSON.parse(payload); } catch (_) { continue; }
+
+    // OpenAI-shape (llama-server)
+    const delta = obj.choices && obj.choices[0] && obj.choices[0].delta;
+    if (delta) {
+      if (typeof delta.reasoning_content === "string") reasoning += delta.reasoning_content;
+      if (typeof delta.content === "string") text += delta.content;
+      continue;
+    }
+
+    // Anthropic-shape
+    if (obj.type === "content_block_delta" && obj.delta) {
+      if (obj.delta.type === "thinking_delta" && typeof obj.delta.thinking === "string") {
+        reasoning += obj.delta.thinking;
+      } else if (obj.delta.type === "text_delta" && typeof obj.delta.text === "string") {
+        text += obj.delta.text;
+      }
+    }
+  }
+  return { reasoning, text };
+}
+
+// Non-streaming JSON response path. Both shapes share `usage`/`content`
+// or `choices[0].message` containers — handle each.
+function extractFromJson(obj) {
+  if (!obj || typeof obj !== "object") return null;
+
+  // OpenAI-shape: { choices: [{ message: { reasoning_content, content } }] }
+  const msg = obj.choices && obj.choices[0] && obj.choices[0].message;
+  if (msg) {
+    return {
+      reasoning: typeof msg.reasoning_content === "string" ? msg.reasoning_content : "",
+      text: typeof msg.content === "string" ? msg.content : "",
+    };
+  }
+
+  // Anthropic-shape: { content: [{ type: "thinking", thinking }, { type: "text", text }] }
+  if (Array.isArray(obj.content)) {
+    let reasoning = "";
+    let text = "";
+    for (const c of obj.content) {
+      if (!c || typeof c !== "object") continue;
+      if (c.type === "thinking" && typeof c.thinking === "string") reasoning += c.thinking;
+      else if (c.type === "text" && typeof c.text === "string") text += c.text;
+    }
+    return { reasoning, text };
+  }
+
+  return null;
+}
+
+function logAudit({ host, model, reqId, reasoning, text }) {
+  if (!reasoning && !text) return;
+  const exc = reasoning
+    ? reasoning.replace(/\s+/g, " ").trim().slice(0, EXCERPT_LEN)
+    : "";
+  const parts = [
+    `target=${host}`,
+    model ? `model=${model}` : null,
+    reqId ? `req=${reqId}` : null,
+    `reasoning_chars=${reasoning.length}`,
+    `text_chars=${text.length}`,
+    exc ? `excerpt="${exc.replace(/"/g, "'")}"` : null,
+  ].filter(Boolean);
+  console.log(`[audit] ${parts.join(" ")}`);
+}
+
+if (!globalThis.__ccrAuditPatched) {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async function auditedFetch(input, init) {
+    const url = typeof input === "string" ? input : (input && input.url) || "";
+    const watch = TARGET_RE.test(url);
+    const model = watch && init && init.body ? modelFromBody(init.body) : null;
+
+    const resp = await realFetch(input, init);
+    if (!watch || !resp.ok) return resp;
+
+    const reqId = resp.headers.get("request-id") || resp.headers.get("x-request-id") || null;
+    const host = targetHost(url);
+    const ct = (resp.headers.get("content-type") || "").toLowerCase();
+    const isStream = ct.includes("text/event-stream");
+
+    if (!isStream) {
+      try {
+        const text = await resp.text();
+        const obj = JSON.parse(text);
+        const got = extractFromJson(obj);
+        if (got) logAudit({ host, model, reqId, ...got });
+        return new Response(text, {
+          status: resp.status,
+          statusText: resp.statusText,
+          headers: resp.headers,
+        });
+      } catch (_) {
+        return resp;
+      }
+    }
+
+    // Streaming: tee the body. Pass each chunk through, also accumulate
+    // a copy. After the stream ends, parse the captured copy and log.
+    const reader = resp.body.getReader();
+    const captured = [];
+    const teed = new ReadableStream({
+      async start(controller) {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            captured.push(value);
+            controller.enqueue(value);
+          }
+        } catch (e) {
+          controller.error(e);
+          return;
+        }
+        controller.close();
+        try {
+          const full = Buffer.concat(captured.map(c => Buffer.from(c))).toString("utf8");
+          const got = extractFromStream(full);
+          logAudit({ host, model, reqId, ...got });
+        } catch (_) {}
+      },
+      cancel(reason) {
+        try { reader.cancel(reason); } catch (_) {}
+      },
+    });
+    return new Response(teed, {
+      status: resp.status,
+      statusText: resp.statusText,
+      headers: resp.headers,
+    });
+  };
+  globalThis.__ccrAuditPatched = true;
+  console.log(`[audit] global fetch patched (targets=${TARGET_RE})`);
+}
+
+class AuditTransformer {
+  constructor(options) {
+    this.options = options || {};
+    this.name = "audit";
+  }
+}
+
+AuditTransformer.TransformerName = "audit";
+
+module.exports = AuditTransformer;

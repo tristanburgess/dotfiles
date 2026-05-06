@@ -10,7 +10,10 @@
       "path": "{{ .chezmoi.homeDir }}/.claude-code-router/cloudfallback.transformer.js"
     },
     {
-      "path": "{{ .chezmoi.homeDir }}/.claude-code-router/ollamactx.transformer.js"
+      "path": "{{ .chezmoi.homeDir }}/.claude-code-router/anthropic-shim.transformer.js"
+    },
+    {
+      "path": "{{ .chezmoi.homeDir }}/.claude-code-router/audit.transformer.js"
     }
   ],
   "Providers": [
@@ -37,33 +40,30 @@
       ],
       {{- if ne (get . "cloudAuth" | default "apikey") "ccs-pro" }}
       "transformer": {
-        "use": ["Anthropic", "cloudfallback"]
+        "use": ["Anthropic"]
       }
       {{- end }}
     },
     {
-      "name": "ollama",
-      "api_base_url": "http://localhost:11434/v1/chat/completions",
-      "api_key": "ollama",
+      "name": "local",
+      "api_base_url": "http://127.0.0.1:11434/v1/chat/completions",
+      "api_key": "local",
       "models": [
-        "{{ .ollama.code }}",
-        "{{ .ollama.prose }}",
-        "{{ .ollama.think }}"
-      ],
-      "transformer": {
-        "use": ["ollamactx"]
-      }
+        "{{ .local.code }}",
+        "{{ .local.prose }}",
+        "{{ .local.think }}"
+      ]
     }
   ],
   "Router": {
     "default":     "anthropic,{{ .cloud.sonnet }}",
-    "background":  "ollama,{{ .ollama.code }}",
-    "think":       "ollama,{{ .ollama.think }}",
+    "background":  "local,{{ .local.code }}",
+    "think":       "local,{{ .local.think }}",
     "longContext": "anthropic,{{ .cloud.sonnet }}",
     "longContextThreshold": 60000,
     "webSearch":   "anthropic,{{ .cloud.sonnet }}"
   },
   "fallback": {
-    "default": ["ollama,{{ .ollama.code }}"]
+    "default": ["local,{{ .local.code }}"]
   }
 }
